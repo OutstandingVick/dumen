@@ -29,44 +29,24 @@ Dumen treats "I don't know if it was paid" as a state of its own. Nothing in tha
 
 ```mermaid
 flowchart TB
-  T[Ticket] --> I
+  T([Refund ticket]) --> I["Intake<br/>Nemotron decides refund / decline"]
+  I -->|"approved, order not already paid"| E["Executor<br/>POST /refund with a stable refund_key"]
+  E -->|"timeout · 202 · 502"| V["Verifier<br/>code only: was it actually paid?"]
+  V -->|"not paid → retry same key (max 2)"| E
+  V -->|"paid once"| C([Confirmed])
+  V -->|"conflict · unreachable · out of retries"| X["Escalation<br/>Nemotron case summary → human queue"]
+  I -->|"already paid · conflict · no model"| X
 
-  subgraph Agents
-    I["Intake<br/>(Nemotron)"]
-    E["Executor<br/>(code)"]
-    V["Verifier<br/>(code, no LLM)"]
-    X["Escalation<br/>(Nemotron)"]
-  end
+  W[("Meterless World Model<br/>every state change, invariants")]
+  M[("Meterless H-MEM<br/>wait-window lessons")]
+  Z[("Zetaris refund_truth<br/>orders DB + processor log")]
+  N[("Meterless Nightshift<br/>NVIDIA Nemotron")]
 
-  I -- "check order first" --> V
-  V -- "already paid → reject with evidence" --> I
-  I -- APPROVED --> E
-  E -- "POST /refund (stable refund_key)" --> P[("Mock processor<br/>naive, seeded chaos")]
-  E -- "timeout / 202 / 502 → UNKNOWN" --> V
-  V -- "not paid → RETRY_SAME_KEY (max 2)" --> E
-  V -- "conflict / unavailable / out of retries" --> X
-  X --> Q[["escalations.json"]]
-
-  subgraph Meterless
-    W["World Model<br/>WorldStore · IngestPipeline · ContextBuilder<br/>refund state machine + invariants"]
-    M["H-MEM<br/>MemoryStore · MemoryRetrieval · Mining · TrustLedger"]
-  end
-
-  I & E & V & X -- "every state change" --> W
-  V <-- "wait-window lessons" --> M
-
-  subgraph Zetaris["Zetaris semantic layer"]
-    Z["dumen.refund_truth<br/>paid | not_paid | conflict"]
-    A[("Source A: orders DB<br/>orders, refunds")]
-    B[("Source B: processor log<br/>processor_log")]
-    A --> Z
-    B --> Z
-  end
-  V -- "SELECT … WHERE refund_key / order_id" --> Z
-  P -- writes --> B
-  E -- writes --> A
-
-  I & X -. "generator()" .-> N["Meterless Nightshift<br/>OpenAI-compatible endpoint"] -.-> NV["NVIDIA Nemotron 3.5 Lightning"]
+  V -.- Z
+  V -.- M
+  I -.- N
+  X -.- N
+  E -.- W
 ```
 
 **The refund state machine** (enforced in [runtime/world/machine.ts](runtime/world/machine.ts)):
@@ -76,12 +56,45 @@ RECEIVED → INTAKE_REVIEW → APPROVED | REJECTED | ESCALATED
 APPROVED → EXECUTING → CONFIRMED | UNKNOWN | FAILED_DEFINITE
 UNKNOWN | FAILED_DEFINITE → VERIFYING → CONFIRMED | RETRY_SAME_KEY | ESCALATED
 RETRY_SAME_KEY → EXECUTING
+ESCALATED → VERIFYING (human approve) | REJECTED (human reject)
 ```
 
 The World Model refuses any transition that breaks these invariants, and records the refusal as an alert:
 1. **At most one successful payment per refund key.** Executing again requires verified `not_paid` evidence showing 0 payments, and two agents racing to execute can't both win.
 2. **Nothing uncertain is re-executed without verification.** UNKNOWN and FAILED_DEFINITE can only go to VERIFYING.
 3. **Undecided means escalate, never pay.** Leaving VERIFYING needs `refund_truth` evidence; a third retry is refused.
+
+Only a person (`agentId=human`, with a reason) can move an escalated refund. Approving it doesn't pay it: it goes back through the Verifier, which re-checks this refund key and the whole order, and grants exactly one more attempt.
+
+## Dashboard
+
+```bash
+npm run dashboard        # http://localhost:3012
+```
+
+The ops view for a refund lead, built only from the run files in `logs/`. It shows what Dumen stopped, why, and what needs attention.
+
+![Baseline vs Dumen on the same seed: 1,301.12 paid out twice vs 0.00](docs/screenshots/overview.png)
+
+**Run comparison** runs baseline vs Dumen on a seed and lost rate you choose (about 45 seconds), then opens the new run. Each refund's **trace** is every World Model event: which agent, the state change, the reason, and the evidence (the Zetaris query and rows, or the processor response). Handoffs between agents are blue, and the other agent's trace for the same ticket sits underneath:
+
+![Trace: Dumen verifies a lost confirmation and confirms without paying again; the baseline retries and pays twice](docs/screenshots/trace.png)
+
+The **escalation queue** shows each case with its Nemotron summary (or a template when the model wasn't used) and its evidence. **Approve** and **Reject** write a human decision through the World Model and appear in the trace. The **memory panel** shows which H-MEM lessons were learned or loaded, their confidence, and when the Verifier used them:
+
+![Escalation queue with Approve/Reject, and H-MEM lessons](docs/screenshots/escalations.png)
+
+## Failure modes
+
+When a dependency fails, Dumen escalates instead of paying on a guess. Drill each one with a flag; `npm run failure:check` runs them all.
+
+| Failure | Drill | What Dumen does | Paid |
+|---|---|---|---|
+| Zetaris unreachable | `npm run chaos -- --agent dumen --zetaris-down` | Intake can't check whether the order was already paid, so every refund is escalated before any payment. If Zetaris drops mid-flight, a refund whose confirmation was lost is escalated, never retried | nothing; a lost-response refund is paid exactly once |
+| Nightshift (model) unreachable | `npm run chaos -- --agent dumen --nightshift-down` | No model decision means no refund. Already-paid requests are still rejected with Zetaris evidence; everything else is escalated | nothing |
+| Processor down | `npm run chaos -- --agent dumen --down 1` | 3 calls with the same key (2 retries), then escalated | nothing |
+
+Each drill run shows a red banner in the dashboard, and each refund's trace gives the exact reason, e.g. `refund_truth unavailable (Zetaris unreachable at … (ECONNREFUSED)); never pay blind`. The drill flags point the client at a closed port, so the code hits a real refused connection.
 
 ## Sponsor technology
 
@@ -172,16 +185,17 @@ npm run chaos -- --agent dumen --seed 42 --lost 0.2 --save-intake    # also refr
 npm run chaos -- --agent baseline --seed 42 --lost 0.2               # the bug
 ```
 
-Chaos options: `--lost`, `--slow`, `--fail`, `--down` (rates per processor call), `--seed`, `--tickets`, `--concurrency`, `--call-timeout-ms`, `--cached-intake`, `--fresh-memory`.
+Chaos options: `--lost`, `--slow`, `--fail`, `--down` (rates per processor call), `--seed`, `--tickets`, `--concurrency`, `--call-timeout-ms`, `--cached-intake`, `--fresh-memory`, `--zetaris-down`, `--nightshift-down`.
 
 ### Checks
 
 | Command | Checks |
 |---|---|
 | `npm run typecheck` | TypeScript |
-| `npm run world:check` | World Model: stable IDs, idempotent ingest, every transition rule and invariant, concurrent execute race, recompute from the log (23 checks) |
-| `npm run memory:check` | H-MEM across three simulated runs: learn, persist, hydrate, act differently, ledger (14 checks) |
+| `npm run world:check` | World Model: stable IDs, idempotent ingest, every transition rule and invariant, concurrent execute race, human decisions, recompute from the log (28 checks) |
+| `npm run memory:check` | H-MEM across three simulated runs: learn, persist, hydrate, act differently, ledger (15 checks) |
 | `npm run agents:check` | Every processor behaviour through the real agents and Zetaris: lost response, slow confirm, 502 then success, 502 ×3, down, already paid, malicious re-send, conflict (17 checks) |
+| `npm run failure:check` | Fail-safe drills: Zetaris down (whole run and mid-flight), Nightshift down, processor down; nothing paid on a guess (12 checks) |
 | `npm run truth:check` | `refund_truth` gives the expected truth for each seeded case |
 | `npm run freshness:check` | Insert, read, delete, read: the view reflects each change immediately |
 | `npm run gen:smoke` | One generator call (add `--stream` to stream) |
@@ -206,6 +220,7 @@ Every chaos run writes `logs/<runId>/`:
 - **Model output varies.** Nemotron sometimes writes "approved" instead of "refund", or declines on its own; Intake normalises the former, and the Verifier's check runs regardless. Live runs therefore differ slightly from cached ones in timing and wording, not in payments.
 - **Partial engines.** Built: the minimum services from each spec. Not built: H-MEM dreaming, sleep and conflict resolution; World Model enrichment, relationship service and supervisor agent. The Markovian engine isn't used (no long single tasks).
 - **Single process.** The world store and memory are JSONL/JSON files with in-process locking; a multi-process deployment would need the spec's Postgres-backed store.
+- **Dashboard decisions** only work on the newest run, because every chaos run resets the databases. An approval executes against a healthy mock processor started for that decision.
 - **Zetaris login** uses the same HTTP API as the Zetaris UI (username/password), not a REST API key.
 
 ## Credits

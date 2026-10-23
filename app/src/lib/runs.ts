@@ -132,6 +132,7 @@ export interface Refund {
   state: string;
   calls: number;
   retried: boolean;
+  verified: boolean; // went through VERIFYING (an uncertain call was checked in refund_truth)
   paidTwice: boolean;
   humanDecision: string | null;
 }
@@ -203,6 +204,7 @@ export function refundsOf(run: Run): Refund[] {
           state: transitions.at(-1)?.to ?? "RECEIVED",
           calls: transitions.filter((e) => e.to === "EXECUTING").length,
           retried: transitions.some((e) => e.to === "RETRY_SAME_KEY"),
+          verified: transitions.some((e) => e.to === "VERIFYING"),
           paidTwice: !!refundKey && doubled.has(refundKey),
           humanDecision: human ? `${human.to} by human` : null,
         };
@@ -234,6 +236,7 @@ export function refundsOf(run: Run): Refund[] {
         state,
         calls,
         retried: calls > 1,
+        verified: false,
         paidTwice: paidTwice || orderDouble,
         humanDecision: null,
       };

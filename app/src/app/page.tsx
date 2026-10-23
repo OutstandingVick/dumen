@@ -82,6 +82,7 @@ function Side({ run, agent }: { run: Run | null; agent: "baseline" | "dumen" }) 
 function pickDefault(refunds: Refund[], other: Refund[]): string | undefined {
   const twiceElsewhere = (r: Refund) => other.some((o) => o.ticketId === r.ticketId && o.paidTwice);
   return (
+    refunds.find((r) => twiceElsewhere(r) && r.verified) ??
     refunds.find((r) => twiceElsewhere(r) && r.calls > 0) ??
     refunds.find((r) => r.paidTwice) ??
     refunds.find((r) => twiceElsewhere(r)) ??
@@ -108,7 +109,10 @@ npm run compare`}</pre>
   }
 
   // Open on the newest Dumen run that had lost confirmations: that's where the story is.
-  const defaultRun = runs.find((r) => r.agent === "dumen" && (r.summary?.rates.lost ?? 0) > 0) ?? runs.find((r) => r.agent === "dumen") ?? runs[0];
+  // Outage drills are opened from the picker, not by default.
+  const drill = (r: RunInfo) => !!(r.summary?.failures?.zetaris_down || r.summary?.failures?.nightshift_down);
+  const defaultRun =
+    runs.find((r) => r.agent === "dumen" && !drill(r) && (r.summary?.rates.lost ?? 0) > 0) ?? runs.find((r) => r.agent === "dumen") ?? runs[0];
   const run = loadRun(sp.run ?? defaultRun.id) ?? loadRun(defaultRun.id)!;
   const pair = pairFor(run.info);
   const baseline = pair.baseline ? loadRun(pair.baseline.id) : null;
@@ -216,7 +220,7 @@ npm run compare`}</pre>
           </table>
         </section>
 
-        <section className="panel">
+        <section className="panel" id="trace">
           <h2>Trace · {selected ? `${selected.ticketId} (${selected.orderId})` : "pick a refund"}</h2>
           {selected && (
             <>
