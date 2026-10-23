@@ -31,7 +31,7 @@ CREATE SCHEMASTORE CONTAINER dumen;
 --   paid      = the processor paid it exactly once (whatever we recorded)
 --   not_paid  = the processor never paid it, and we don't claim it was paid
 --   conflict  = paid more than once (double refund), or we say paid but the processor has no success
-CREATE SCHEMASTORE VIEW refund_truth WITH CONTAINER dumen AS
+CREATE OR REPLACE SCHEMASTORE VIEW refund_truth WITH CONTAINER dumen AS
 SELECT
   COALESCE(r.refund_key, p.refund_key)   AS refund_key,
   r.order_id,

@@ -15,7 +15,8 @@
     "world:check": "tsx scripts/world-check.ts",
     "memory:check": "tsx scripts/memory-check.ts",
     "agents:check": "tsx scripts/agents-check.ts",
-    "compare": "tsx scripts/compare.ts"
+    "compare": "tsx scripts/compare.ts",
+    "zetaris:setup": "tsx scripts/zetaris-setup.ts"
   },
   "license": "MIT",
   "dependencies": {
