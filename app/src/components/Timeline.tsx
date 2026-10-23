@@ -1,4 +1,5 @@
 import type { TimelineItem } from "@/lib/runs";
+import { AgentAvatar } from "./Agent";
 
 function tone(i: TimelineItem): string {
   if (i.kind === "handoff") return "handoff";
@@ -19,7 +20,7 @@ function Evidence({ e }: { e: NonNullable<TimelineItem["evidence"]> }) {
   if (e.response) parts.push(`response:\n${JSON.stringify(e.response, null, 2)}`);
   if (e.note) parts.push(`note: ${e.note}`);
   if (!parts.length) return null;
-  const label = e.query ? "Zetaris evidence" : e.response ? "processor / step detail" : "detail";
+  const label = e.query ? "🔎 Zetaris evidence" : e.response ? "processor / step detail" : "detail";
   return (
     <details>
       <summary>{label}</summary>
@@ -35,13 +36,16 @@ export function Timeline({ items }: { items: TimelineItem[] }) {
     <ol className="timeline">
       {items.map((i, n) => (
         <li key={n} className={`tl ${tone(i)}`}>
-          <div className="head">
-            <span className="agent">{i.agent}</span>
-            <span className="title">{i.title}</span>
-            <span className="when">+{((Date.parse(i.ts) - t0) / 1000).toFixed(1)}s</span>
+          <AgentAvatar id={i.agent} size={32} />
+          <div className="card">
+            <div className="head">
+              <span className="agent">{i.agent}</span>
+              <span className="title">{i.title}</span>
+              <span className="when">+{((Date.parse(i.ts) - t0) / 1000).toFixed(1)}s</span>
+            </div>
+            {i.reason && <div className="why">{i.reason}</div>}
+            {i.evidence && <Evidence e={i.evidence} />}
           </div>
-          {i.reason && <div className="why">{i.reason}</div>}
-          {i.evidence && <Evidence e={i.evidence} />}
         </li>
       ))}
     </ol>

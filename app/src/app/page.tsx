@@ -1,5 +1,7 @@
 import Link from "next/link";
+import { AgentAvatar, Crew } from "@/components/Agent";
 import { CompareButton } from "@/components/CompareButton";
+import { CountUp } from "@/components/CountUp";
 import { DecisionForm } from "@/components/DecisionForm";
 import { RunPicker } from "@/components/RunPicker";
 import { Timeline } from "@/components/Timeline";
@@ -48,13 +50,20 @@ function Side({ run, agent }: { run: Run | null; agent: "baseline" | "dumen" }) 
   return (
     <div className={`side ${agent}`}>
       <div className="who">
-        <span>{agent === "dumen" ? "Dumen" : "Baseline agent (retries from memory)"}</span>
+        <span className="tag">
+          <AgentAvatar id={agent === "dumen" ? "verifier" : "baseline"} size={30} />
+          {agent === "dumen" ? "Dumen" : "Baseline agent · retries from memory"}
+        </span>
         <Link href={`/?run=${run.info.id}`} className="hint">
           open run →
         </Link>
       </div>
+      <div className="receipt-line" />
       <div className="hint">money paid out twice</div>
-      <div className={`money ${lostBad ? "bad" : "good"}`}>{money(s.money_lost)}</div>
+      <div className={`money ${lostBad ? "bad" : "good"}`}>
+        <CountUp value={s.money_lost} />
+      </div>
+      <div className={`stamp ${lostBad ? "bad" : "good"}`}>{lostBad ? `PAID ×2 · ${s.double_refunds}` : "VERIFIED ✓"}</div>
       <div className="stats">
         <div className={`stat ${s.double_refunds ? "bad" : "good"}`}>
           <b>{s.double_refunds}</b>
@@ -98,8 +107,11 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ r
     return (
       <main className="shell">
         <div className="empty">
-          <div className="brand">Dumen</div>
-          <p className="hint">No runs yet. Create one from the repo folder:</p>
+          <div className="logo" aria-hidden>
+            🧾
+          </div>
+          <h2 style={{ margin: "0 0 6px", fontSize: 26 }}>No runs yet.</h2>
+          <p className="hint">Nothing to show until a run happens. Create one from the repo folder:</p>
           <pre>{`docker compose up -d --wait
 npm run compare`}</pre>
           <p className="hint">or a single run: <code>npm run chaos -- --agent dumen --seed 42 --lost 0.2</code></p>
@@ -129,16 +141,18 @@ npm run compare`}</pre>
   const latest = latestRunId();
   const openCases = run.escalations.filter((c) => !c.decision);
 
-  const headline =
-    baseline && dumen
-      ? `With ${Math.round((s.rates.lost ?? 0) * 100)}% of processor confirmations lost (seed ${s.seed}), the baseline agent paid ${baseline.summary.double_refunds} order${baseline.summary.double_refunds === 1 ? "" : "s"} twice and lost ${money(baseline.summary.money_lost)}. Dumen paid nothing twice: it rejected ${dumen.summary.rejections ?? 0} already-paid request${dumen.summary.rejections === 1 ? "" : "s"} and escalated ${dumen.summary.escalations ?? 0} case${dumen.summary.escalations === 1 ? "" : "s"} for a person to decide.`
-      : null;
 
   return (
     <main className="shell">
       <div className="topbar">
         <div className="brand">
-          Dumen<small>refund ops</small>
+          <span className="logo" aria-hidden>
+            🧾
+          </span>
+          <div>
+            Dumen
+            <small>refund control room</small>
+          </div>
         </div>
         <RunPicker runs={runs.map((r) => ({ id: r.id, label: runLabel(r) }))} current={run.info.id} />
         <div className="spacer" />
@@ -159,14 +173,31 @@ npm run compare`}</pre>
         <div className="banner info">This is an older run. A later run has reset the databases, so its escalations can be read but not decided.</div>
       )}
 
-      {headline && (
+      {baseline && dumen && (
         <div className="panel">
-          <h3 style={{ margin: 0 }}>{headline}</h3>
-          {openCases.length > 0 && run.info.agent === "dumen" && (
-            <p className="hint" style={{ margin: "6px 0 0" }}>
-              <a href="#escalations">{openCases.length} escalation{openCases.length === 1 ? "" : "s"} waiting for your decision ↓</a>
-            </p>
-          )}
+          <div className="hero">
+            <div>
+              <h1>
+                With {Math.round((s.rates.lost ?? 0) * 100)}% of confirmations lost, the baseline paid{" "}
+                <em>
+                  {baseline.summary.double_refunds} order{baseline.summary.double_refunds === 1 ? "" : "s"} twice
+                </em>{" "}
+                and lost {money(baseline.summary.money_lost)}. Dumen paid <em>nothing twice</em>.
+              </h1>
+              <p className="hint" style={{ margin: "8px 0 0" }}>
+                It rejected {dumen.summary.rejections ?? 0} already-paid request{dumen.summary.rejections === 1 ? "" : "s"} and escalated {dumen.summary.escalations ?? 0} case
+                {dumen.summary.escalations === 1 ? "" : "s"} for a person to decide · seed {s.seed}
+              </p>
+              {openCases.length > 0 && run.info.agent === "dumen" && (
+                <a href="#escalations" className="attention">
+                  <span className="pulse">{openCases.length}</span>
+                  waiting for your decision ↓
+                </a>
+              )}
+            </div>
+          </div>
+          <div className="receipt-line" style={{ margin: "16px 0 12px" }} />
+          <Crew />
         </div>
       )}
 
@@ -230,9 +261,9 @@ npm run compare`}</pre>
               <Timeline items={timelineOf(run, selected.key)} />
               {other && counterpart && (
                 <>
-                  <h3 style={{ marginTop: 18 }}>
-                    Same ticket, {other.info.agent}: <Badge r={counterpart} />
-                  </h3>
+                  <div className="vs-label">
+                    vs. same ticket, {other.info.agent} <Badge r={counterpart} />
+                  </div>
                   <Timeline items={timelineOf(other, counterpart.key)} />
                 </>
               )}
@@ -305,7 +336,9 @@ npm run compare`}</pre>
         </div>
       )}
 
-      <footer>Data: Zetaris refund_truth · Reasoning: Meterless World Model + H-MEM · Model: NVIDIA Nemotron via Meterless Nightshift</footer>
+      <footer>
+        Data: <b>Zetaris</b> refund_truth · Reasoning: <b>Meterless</b> World Model + H-MEM · Model: <b>NVIDIA Nemotron</b> via Meterless Nightshift
+      </footer>
     </main>
   );
 }
