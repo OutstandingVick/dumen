@@ -23,7 +23,9 @@ export class MemoryMiningService {
 
   mineVerification(o: VerificationOutcome): MemoryRecord[] {
     const mined: MemoryRecord[] = [];
-    if (o.verdict === "paid" && o.settleMs !== null) mined.push(this.settleDelay(o));
+    // Only a 202 measures the processor's own delay. After a timeout the clock also includes
+    // our call timeout, which would teach an inflated wait window.
+    if (o.verdict === "paid" && o.settleMs !== null && o.executorResult === "accepted") mined.push(this.settleDelay(o));
     if (o.verdict === "paid" && o.executorResult === "timeout") mined.push(this.counter(o, "paid_despite_timeout"));
     if (o.verdict === "not_paid" && o.executorResult !== "failed") mined.push(this.counter(o, "not_paid_after_uncertain_call"));
     return mined;

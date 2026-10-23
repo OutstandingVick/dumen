@@ -18,8 +18,11 @@ const TRANSITIONS: Record<RefundState, readonly RefundState[]> = {
   FAILED_DEFINITE: ["VERIFYING"],
   VERIFYING: ["CONFIRMED", "RETRY_SAME_KEY", "ESCALATED"],
   RETRY_SAME_KEY: ["EXECUTING"],
-  ESCALATED: [],
+  // A human decision on an escalated case: reject, or approve → back through the Verifier.
+  ESCALATED: ["VERIFYING", "REJECTED"],
 };
+
+export const HUMAN_AGENT = "human";
 
 export class InvariantViolation extends Error {
   constructor(
@@ -38,6 +41,12 @@ export function checkTransition(entity: RefundEntity, ev: EventInput): void {
   }
   if (!TRANSITIONS[from].includes(to)) {
     throw new InvariantViolation("ILLEGAL_TRANSITION", `${from} → ${to} is not allowed`);
+  }
+
+  if (from === "ESCALATED") {
+    // Only a person can move an escalated refund, and only with a recorded reason.
+    if (ev.agentId !== HUMAN_AGENT) throw new InvariantViolation("ESCALATION_NEEDS_HUMAN", `${ev.agentId} cannot decide an escalated refund`);
+    if (!ev.reason?.trim()) throw new InvariantViolation("DECISION_WITHOUT_REASON", "a human decision needs a reason");
   }
 
   if (to === "EXECUTING") {
@@ -62,7 +71,8 @@ export function checkTransition(entity: RefundEntity, ev: EventInput): void {
       if (!(e!.truth === "not_paid" && e!.success_count === 0)) {
         throw new InvariantViolation("RETRY_WITHOUT_PROOF", `truth=${e!.truth} success_count=${e!.success_count}`);
       }
-      if (entity.retries >= MAX_RETRIES) {
+      // Each human approval grants exactly one more verified attempt.
+      if (entity.retries >= MAX_RETRIES + entity.humanApprovals) {
         throw new InvariantViolation("RETRY_LIMIT", `already retried ${entity.retries} times; must escalate`);
       }
     }

@@ -71,6 +71,7 @@ export interface RefundEntity {
   state: RefundState;
   executions: number; // how many times POST /refund was attempted
   retries: number; // RETRY_SAME_KEY transitions taken
+  humanApprovals: number; // ESCALATED → VERIFYING decisions by a person
   lastEvidence: TruthEvidence | null;
   firstSeenAt: string;
   lastSeenAt: string;

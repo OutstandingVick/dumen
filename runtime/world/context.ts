@@ -38,8 +38,8 @@ export class ContextBuilderService {
     return {
       entity,
       terminal: TERMINAL_STATES.has(state),
-      canExecute: state === "APPROVED" || (state === "RETRY_SAME_KEY" && entity.retries <= MAX_RETRIES),
-      retriesLeft: Math.max(0, MAX_RETRIES - entity.retries),
+      canExecute: state === "APPROVED" || (state === "RETRY_SAME_KEY" && entity.retries <= MAX_RETRIES + entity.humanApprovals),
+      retriesLeft: Math.max(0, MAX_RETRIES + entity.humanApprovals - entity.retries),
       lastEvidence: entity.lastEvidence,
       history: recent.map(({ seq, ts, type, from, to, agentId, reason }) => ({ seq, ts, type, from, to, agentId, reason })),
       alerts: events.filter((e) => e.type === "alert").map((e) => e.reason ?? ""),

@@ -12,6 +12,7 @@ import { parseArgs } from "node:util";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const { values: args } = parseArgs({
+  allowNegative: true, // --no-control
   options: {
     seeds: { type: "string", default: "42,1,7" },
     lost: { type: "string", default: "0.2" },

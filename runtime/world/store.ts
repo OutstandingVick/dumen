@@ -40,6 +40,7 @@ export function reduceEntity(events: WorldEvent[]): RefundEntity | null {
         state: "RECEIVED",
         executions: 0,
         retries: 0,
+        humanApprovals: 0,
         lastEvidence: null,
         firstSeenAt: ev.ts,
         lastSeenAt: ev.ts,
@@ -52,6 +53,7 @@ export function reduceEntity(events: WorldEvent[]): RefundEntity | null {
       e.state = ev.to;
       if (ev.to === "EXECUTING") e.executions++;
       if (ev.to === "RETRY_SAME_KEY") e.retries++;
+      if (ev.from === "ESCALATED" && ev.to === "VERIFYING") e.humanApprovals++;
       if (ev.to === "APPROVED" && typeof ev.data?.amount === "number") e.amount = ev.data.amount;
     }
     if (ev.evidence) e.lastEvidence = ev.evidence;

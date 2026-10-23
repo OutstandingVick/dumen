@@ -28,6 +28,31 @@ export interface DumenResult {
   decision: IntakeDecision | null;
 }
 
+// Executor ⇄ Verifier until the refund settles: CONFIRMED, or ESCALATED (with a case in
+// the queue). Starts from APPROVED or RETRY_SAME_KEY; the world enforces the retry budget.
+export async function executeUntilSettled(entityId: string, ticketMessage: string, deps: DumenDeps): Promise<RefundState> {
+  const { world, memory, trace } = deps;
+  const verifierDeps: VerifierDeps = { world, memory, trace, ...deps.verifier };
+  for (let turn = 0; turn <= MAX_RETRIES + world.store.entity(entityId)!.humanApprovals; turn++) {
+    const exec = await execute(entityId, { world, trace, ordersDb: deps.ordersDb, processorUrl: deps.processorUrl, callTimeoutMs: deps.callTimeoutMs });
+    if (exec.state === "CONFIRMED") return "CONFIRMED";
+
+    const v = await verifyAfterUncertainCall(entityId, exec.callStartedAt, exec.uncertainty, verifierDeps);
+    const refundKey = world.store.entity(entityId)!.refundKey;
+    if (v.decision === "CONFIRMED") {
+      await deps.ordersDb.query("UPDATE refunds SET internal_status = 'succeeded' WHERE refund_key = $1", [refundKey]);
+      return "CONFIRMED";
+    }
+    if (v.decision === "ESCALATED") {
+      await escalate(entityId, { world, trace, ticketMessage, useModel: deps.modelSummaries });
+      return "ESCALATED";
+    }
+    // RETRY_SAME_KEY → next turn executes again with the same refund_key
+    await deps.ordersDb.query("UPDATE refunds SET internal_status = 'pending' WHERE refund_key = $1", [refundKey]);
+  }
+  return world.store.entity(entityId)!.state;
+}
+
 export async function runDumen(ticket: Ticket, deps: DumenDeps): Promise<DumenResult> {
   const { world, memory, trace } = deps;
   const verifierDeps: VerifierDeps = { world, memory, trace, ...deps.verifier };
@@ -57,25 +82,6 @@ export async function runDumen(ticket: Ticket, deps: DumenDeps): Promise<DumenRe
   if (intake.outcome === "ESCALATED") await escalate(id, { world, trace, ticketMessage: ticket.message, useModel: deps.modelSummaries });
   if (intake.outcome !== "APPROVED") return done(intake.decision);
 
-  // Executor ⇄ Verifier loop, bounded by MAX_RETRIES.
-  for (let turn = 0; turn <= MAX_RETRIES; turn++) {
-    const exec = await execute(id, { world, trace, ordersDb: deps.ordersDb, processorUrl: deps.processorUrl, callTimeoutMs: deps.callTimeoutMs });
-    if (exec.state === "CONFIRMED") return done(intake.decision);
-
-    const v = await verifyAfterUncertainCall(id, exec.callStartedAt, exec.uncertainty, verifierDeps);
-    const refundKey = world.store.entity(id)!.refundKey;
-    if (v.decision === "CONFIRMED") {
-      await deps.ordersDb.query("UPDATE refunds SET internal_status = 'succeeded' WHERE refund_key = $1", [refundKey]);
-      return done(intake.decision);
-    }
-    if (v.decision === "RETRY_SAME_KEY") {
-      await deps.ordersDb.query("UPDATE refunds SET internal_status = 'pending' WHERE refund_key = $1", [refundKey]);
-    }
-    if (v.decision === "ESCALATED") {
-      await escalate(id, { world, trace, ticketMessage: ticket.message, useModel: deps.modelSummaries });
-      return done(intake.decision);
-    }
-    // RETRY_SAME_KEY → next turn executes again with the same refund_key
-  }
+  await executeUntilSettled(id, ticket.message, deps);
   return done(intake.decision);
 }

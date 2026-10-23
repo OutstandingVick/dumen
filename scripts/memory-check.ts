@@ -31,10 +31,12 @@ function check(name: string, ok: boolean, detail = "") {
   check("run 1 uses the default wait window", before.waitMs === DEFAULT_WAIT, before.source);
 
   mem.mining.mineVerification({ agentId: "verifier", taskId: "T-001", refundKey: "rf_a", orderId: "ORD-1", executorResult: "accepted", verdict: "paid", settleMs: 1400 });
-  mem.mining.mineVerification({ agentId: "verifier", taskId: "T-002", refundKey: "rf_b", orderId: "ORD-2", executorResult: "timeout", verdict: "paid", settleMs: 1700 });
+  mem.mining.mineVerification({ agentId: "verifier", taskId: "T-002", refundKey: "rf_b", orderId: "ORD-2", executorResult: "accepted", verdict: "paid", settleMs: 1700 });
+  mem.mining.mineVerification({ agentId: "verifier", taskId: "T-003", refundKey: "rf_c", orderId: "ORD-3", executorResult: "timeout", verdict: "paid", settleMs: 4300 });
   const sizeBefore = mem.store.all().length;
-  mem.mining.mineVerification({ agentId: "verifier", taskId: "T-002", refundKey: "rf_b", orderId: "ORD-2", executorResult: "timeout", verdict: "paid", settleMs: 1700 });
+  mem.mining.mineVerification({ agentId: "verifier", taskId: "T-004", refundKey: "rf_d", orderId: "ORD-4", executorResult: "timeout", verdict: "paid", settleMs: 4500 });
   check("same lesson re-mined updates one record, not a new one", mem.store.all().length === sizeBefore);
+  check("timeouts don't inflate the settle delay", mem.store.all().find((m) => m.data.kind === "settle_delay")?.data.maxMs === 1700);
 
   const ctx = mem.retrieval.retrieve(verifierQuery);
   const lesson = ctx.memories.find((m) => m.data.kind === "settle_delay");
@@ -60,7 +62,7 @@ function check(name: string, ok: boolean, detail = "") {
 
   // Outcome feedback: the lesson was right, a slower confirmation extends it.
   mem.store.feedback(lostLesson!.id, "helpful", "verifier");
-  mem.mining.mineVerification({ agentId: "verifier", taskId: "T-003", refundKey: "rf_c", orderId: "ORD-3", executorResult: "timeout", verdict: "paid", settleMs: 3000 });
+  mem.mining.mineVerification({ agentId: "verifier", taskId: "T-005", refundKey: "rf_e", orderId: "ORD-5", executorResult: "accepted", verdict: "paid", settleMs: 3000 });
   mem.store.persist();
 }
 

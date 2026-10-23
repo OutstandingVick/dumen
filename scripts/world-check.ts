@@ -94,6 +94,21 @@ await w.ingest.transition(t4, "EXECUTING", executor, { provenance: prov });
 await w.ingest.transition(t4, "CONFIRMED", executor, { provenance: { source: "processor", response: { http: 200 } } });
 check("502 → verified not_paid → retry same key → CONFIRMED", w.store.entity(t4)!.state === "CONFIRMED" && w.store.entity(t4)!.executions === 2);
 
+// 4c. Escalated refunds move only by a person's recorded decision; approval re-verifies
+// and grants exactly one more attempt (`id` above is ESCALATED after 2 retries).
+check("agent cannot move ESCALATED", await refused(w.ingest.transition(id, "VERIFYING", verifier, { provenance: prov, reason: "x" }), "ESCALATION_NEEDS_HUMAN"));
+check("human decision without reason refused", await refused(w.ingest.transition(id, "VERIFYING", { agentId: "human", taskId: "T-900" }, { provenance: prov }), "DECISION_WITHOUT_REASON"));
+check("ESCALATED → EXECUTING refused even for a human", await refused(w.ingest.transition(id, "EXECUTING", { agentId: "human", taskId: "T-900" }, { provenance: prov, reason: "pay it" }), "ILLEGAL_TRANSITION"));
+await w.ingest.transition(id, "VERIFYING", { agentId: "human", taskId: "T-900" }, { provenance: prov, reason: "reconciled with bank statement" });
+await w.ingest.transition(id, "RETRY_SAME_KEY", verifier, { provenance: { source: "zetaris" }, evidence: ev("not_paid", 0) });
+await w.ingest.transition(id, "EXECUTING", executor, { provenance: prov });
+await w.ingest.transition(id, "UNKNOWN", executor, { provenance: prov });
+await w.ingest.transition(id, "VERIFYING", verifier, { provenance: prov });
+check("approval grants exactly one extra attempt", await refused(w.ingest.transition(id, "RETRY_SAME_KEY", verifier, { provenance: prov, evidence: ev("not_paid", 0) }), "RETRY_LIMIT"), `executions ${w.store.entity(id)!.executions}`);
+await w.ingest.transition(id, "ESCALATED", verifier, { provenance: prov, reason: "still unclear" });
+await w.ingest.transition(id, "REJECTED", { agentId: "human", taskId: "T-900" }, { provenance: prov, reason: "customer already refunded by bank transfer" });
+check("human reject ends the refund", w.store.entity(id)!.state === "REJECTED" && w.context.getRefundContext(id)!.terminal);
+
 // 5. Concurrency: two executors race to execute the same approved refund
 const t3 = (await w.ingest.receive({ ticket_id: "T-902", order_id: "ORD-3" }, intake)).entity.id;
 await w.ingest.transition(t3, "INTAKE_REVIEW", intake, { provenance: prov });

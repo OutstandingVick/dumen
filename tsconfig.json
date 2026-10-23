@@ -8,5 +8,6 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["agents", "runtime", "processor", "scripts"]
+  "include": ["agents", "runtime", "processor", "scripts"],
+  "exclude": ["app"]
 }

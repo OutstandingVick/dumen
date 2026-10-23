@@ -7,3 +7,7 @@ data/processor/
 *.log
 .DS_Store
 .dumen/
+app/.next/
+app/next-env.d.ts
+app/node_modules/
+app/tsconfig.tsbuildinfo

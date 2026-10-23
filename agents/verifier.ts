@@ -51,6 +51,72 @@ export async function checkOrderBeforeIntake(orderId: string, ticketId: string, 
 
 export type VerifyDecision = "CONFIRMED" | "RETRY_SAME_KEY" | "ESCALATED";
 
+// A person approved an escalated refund. Approval is not permission to pay blind: the
+// Verifier re-checks this refund_key and the whole order in refund_truth first.
+//   this key paid once                → CONFIRMED (nothing to pay)
+//   this key paid twice / order paid
+//   under another key / Zetaris down  → ESCALATED again, with the reason
+//   nothing paid                      → RETRY_SAME_KEY (the approval adds one attempt)
+export async function verifyHumanApproval(
+  entityId: string,
+  reason: string,
+  deps: VerifierDeps,
+): Promise<{ decision: VerifyDecision; evidence: TruthEvidence; reason: string }> {
+  const { world, trace } = deps;
+  const { refundKey, ticketId, orderId, executions } = world.context.getRefundContext(entityId)!.entity;
+  await world.ingest.transition(entityId, "VERIFYING", { agentId: "human", taskId: ticketId }, { provenance: { source: "policy", note: "human approval" }, reason });
+
+  const q = `SELECT * FROM dumen.refund_truth WHERE order_id = '${orderId}'`;
+  let rows: RefundTruth[] = [];
+  let error: string | null = null;
+  try {
+    rows = await getOrderRefundTruth(orderId);
+  } catch (e: any) {
+    error = e.message;
+  }
+  const own = rows.find((r) => r.refund_key === refundKey) ?? null;
+  const others = rows.filter((r) => r.refund_key !== refundKey);
+  const othersPaid = others.reduce((s, r) => s + r.success_count, 0);
+  const ownPaid = own?.success_count ?? 0;
+  const evidence: TruthEvidence = error
+    ? { truth: "unavailable", success_count: 0, paid_amount: 0, checked_at: now() }
+    : { truth: ownPaid === 1 ? "paid" : ownPaid > 1 ? "conflict" : "not_paid", success_count: ownPaid, paid_amount: own?.paid_amount ?? 0, checked_at: now() };
+  const provenance = { source: "zetaris" as const, query: q, rows, note: own ? "row for this refund_key found" : `no row for this refund_key (${executions} prior execution(s))` };
+
+  let decision: VerifyDecision;
+  let why: string;
+  if (error) {
+    decision = "ESCALATED";
+    why = `refund_truth unavailable (${error}); approval not executed`;
+  } else if (ownPaid === 1) {
+    decision = "CONFIRMED";
+    why = "approved, but this refund was already paid once; nothing more to pay";
+  } else if (ownPaid > 1) {
+    decision = "ESCALATED";
+    why = `this refund_key was already paid ${ownPaid}×; approval not executed`;
+  } else if (othersPaid > 0) {
+    decision = "ESCALATED";
+    why = `order ${orderId} already paid ${othersPaid}× under another refund_key; approval not executed`;
+  } else if (!own && executions > 0) {
+    decision = "ESCALATED";
+    why = "refund was executed before but has no refund_truth row; cannot verify";
+  } else {
+    decision = "RETRY_SAME_KEY";
+    why = "approved by a person; verified not paid under any key, executing with the same refund_key";
+  }
+
+  await world.ingest.transition(entityId, decision, { agentId: AGENT, taskId: ticketId }, { provenance, evidence, reason: why });
+  trace.write({
+    agent: AGENT,
+    ticket_id: ticketId,
+    action: decision === "RETRY_SAME_KEY" ? "verifier→executor: execute_approved" : decision === "ESCALATED" ? "verifier→escalation: escalate" : "confirm",
+    input: { refund_key: refundKey, order_id: orderId, query: q, rows },
+    output: { evidence },
+    reason: why,
+  });
+  return { decision, evidence, reason: why };
+}
+
 // After a call that didn't confirm (timeout / 202 / 502): check refund_truth. For timeouts
 // and 202s, poll for the learned wait window; a 502 means the processor refused, so one
 // check is enough. Paid once → CONFIRMED. Not paid → RETRY_SAME_KEY (shared budget of
