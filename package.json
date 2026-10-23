@@ -1,0 +1,28 @@
+{
+  "name": "dumen",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Stops AI refund agents from paying customers twice by checking the live system of record before any retry.",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "gen:smoke": "tsx scripts/generator-smoke.ts",
+    "seed": "tsx scripts/seed.ts",
+    "truth:check": "tsx scripts/truth-check.ts",
+    "freshness:check": "tsx scripts/freshness-check.ts",
+    "processor": "tsx processor/server.ts",
+    "chaos": "tsx scripts/chaos.ts"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "dotenv": "^18.0.9",
+    "openai": "^7.43.0",
+    "pg": "^8.23.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "@types/pg": "^8.23.1",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}

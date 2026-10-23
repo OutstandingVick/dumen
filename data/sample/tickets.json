@@ -1,0 +1,142 @@
+[
+  {
+    "ticket_id": "T-001",
+    "order_id": "ORD-1011",
+    "message": "Package lost in transit, I'd like my money back.",
+    "amount_requested": 35.55,
+    "currency": "EUR"
+  },
+  {
+    "ticket_id": "T-002",
+    "order_id": "ORD-1012",
+    "message": "Cancelled within an hour of ordering, still charged.",
+    "amount_requested": 145.91,
+    "currency": "GBP"
+  },
+  {
+    "ticket_id": "T-003",
+    "order_id": "ORD-1013",
+    "message": "Product doesn't match the description. Requesting a refund.",
+    "amount_requested": 105.89,
+    "currency": "USD"
+  },
+  {
+    "ticket_id": "T-004",
+    "order_id": "ORD-1014",
+    "message": "I was charged but the order never shipped.",
+    "amount_requested": 274.78,
+    "currency": "USD"
+  },
+  {
+    "ticket_id": "T-005",
+    "order_id": "ORD-1015",
+    "message": "Wrong size and the return window is still open. Refund please.",
+    "amount_requested": 107.66,
+    "currency": "USD"
+  },
+  {
+    "ticket_id": "T-006",
+    "order_id": "ORD-1016",
+    "message": "Package lost in transit, I'd like my money back.",
+    "amount_requested": 168.88,
+    "currency": "GBP"
+  },
+  {
+    "ticket_id": "T-007",
+    "order_id": "ORD-1017",
+    "message": "Cancelled within an hour of ordering, still charged.",
+    "amount_requested": 43.94,
+    "currency": "USD"
+  },
+  {
+    "ticket_id": "T-008",
+    "order_id": "ORD-1018",
+    "message": "Product doesn't match the description. Requesting a refund.",
+    "amount_requested": 288.54,
+    "currency": "GBP"
+  },
+  {
+    "ticket_id": "T-009",
+    "order_id": "ORD-1019",
+    "message": "Wrong size and the return window is still open. Refund please.",
+    "amount_requested": 290.58,
+    "currency": "USD"
+  },
+  {
+    "ticket_id": "T-010",
+    "order_id": "ORD-1020",
+    "message": "Package lost in transit, I'd like my money back.",
+    "amount_requested": 159.66,
+    "currency": "USD"
+  },
+  {
+    "ticket_id": "T-011",
+    "order_id": "ORD-1021",
+    "message": "I was charged but the order never shipped.",
+    "amount_requested": 229.07,
+    "currency": "GBP"
+  },
+  {
+    "ticket_id": "T-012",
+    "order_id": "ORD-1022",
+    "message": "Package lost in transit, I'd like my money back.",
+    "amount_requested": 134.7,
+    "currency": "EUR"
+  },
+  {
+    "ticket_id": "T-013",
+    "order_id": "ORD-1023",
+    "message": "Wrong size and the return window is still open. Refund please.",
+    "amount_requested": 100.59,
+    "currency": "USD"
+  },
+  {
+    "ticket_id": "T-014",
+    "order_id": "ORD-1024",
+    "message": "Wrong size and the return window is still open. Refund please.",
+    "amount_requested": 283.59,
+    "currency": "GBP"
+  },
+  {
+    "ticket_id": "T-015",
+    "order_id": "ORD-1025",
+    "message": "I was charged but the order never shipped.",
+    "amount_requested": 189.48,
+    "currency": "USD"
+  },
+  {
+    "ticket_id": "T-016",
+    "order_id": "ORD-1026",
+    "message": "I was charged but the order never shipped.",
+    "amount_requested": 90.62,
+    "currency": "GBP"
+  },
+  {
+    "ticket_id": "T-017",
+    "order_id": "ORD-1004",
+    "message": "I asked for a refund days ago and never got a confirmation. Please process it.",
+    "amount_requested": 67.17,
+    "currency": "USD"
+  },
+  {
+    "ticket_id": "T-018",
+    "order_id": "ORD-1005",
+    "message": "I asked for a refund days ago and never got a confirmation. Please process it.",
+    "amount_requested": 95.94,
+    "currency": "GBP"
+  },
+  {
+    "ticket_id": "T-019",
+    "order_id": "ORD-1007",
+    "message": "Wrong size and the return window is still open. Refund please.",
+    "amount_requested": 168.89,
+    "currency": "EUR"
+  },
+  {
+    "ticket_id": "T-020",
+    "order_id": "ORD-1003",
+    "message": "my refund failed, send it again",
+    "amount_requested": 84.77,
+    "currency": "USD"
+  }
+]

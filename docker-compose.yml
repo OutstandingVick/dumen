@@ -1,0 +1,38 @@
+# Two separate stores, on purpose: the agent's own records and the processor's log
+# must be able to disagree. Zetaris reads both.
+name: dumen
+
+services:
+  orders-db: # Source A: orders + internal refunds table
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: dumen
+      POSTGRES_PASSWORD: dumen
+      POSTGRES_DB: orders
+    ports:
+      - "5433:5432"
+    volumes:
+      - orders-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dumen -d orders"]
+      interval: 2s
+      retries: 30
+
+  processor-db: # Source B: what the payment processor actually did
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: dumen
+      POSTGRES_PASSWORD: dumen
+      POSTGRES_DB: processor
+    ports:
+      - "5434:5432"
+    volumes:
+      - processor-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dumen -d processor"]
+      interval: 2s
+      retries: 30
+
+volumes:
+  orders-data:
+  processor-data:
