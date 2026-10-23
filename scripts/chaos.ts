@@ -39,6 +39,10 @@ const { values: args } = parseArgs({
     "cached-intake": { type: "boolean", default: false },
     "save-intake": { type: "boolean", default: false },
     "fresh-memory": { type: "boolean", default: false }, // ignore and don't touch saved H-MEM lessons
+    // Failure drills: point the client at a closed port, so the real "connection refused"
+    // path runs. Zetaris comes back before the final report so the run can still be scored.
+    "zetaris-down": { type: "boolean", default: false },
+    "nightshift-down": { type: "boolean", default: false },
     quiet: { type: "boolean", default: false },
   },
 });
@@ -49,7 +53,7 @@ const CALL_TIMEOUT_MS = Number(args["call-timeout-ms"]);
 const SLOW_MS = 1500;
 const HANG_MS = CALL_TIMEOUT_MS + 2000; // processor hangs longer than the agent waits
 const CONCURRENCY = Number(args.concurrency ?? (args.agent === "dumen" ? 4 : 1));
-const SAMPLE_MODE = process.env.SAMPLE_MODE === "true";
+const SAMPLE_MODE = process.env.SAMPLE_MODE === "true" && !args["nightshift-down"];
 const runId = `${new Date().toISOString().replace(/[:.]/g, "-")}_${args.agent}_seed${args.seed}`;
 const money = (n: number) => n.toFixed(2);
 const log = (msg: string) => !args.quiet && console.log(msg);
@@ -80,6 +84,16 @@ async function pool<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>
   };
   await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
   return results;
+}
+
+const DEAD_URL = "http://127.0.0.1:59999"; // a closed port: real ECONNREFUSED
+const zetarisUrl = process.env.ZETARIS_URL;
+if (args["nightshift-down"]) {
+  if (args["cached-intake"]) throw new Error("--nightshift-down needs live intake; drop --cached-intake");
+  process.env.SAMPLE_MODE = "false";
+  process.env.NIGHTSHIFT_BASE_URL = `${DEAD_URL}/v1`;
+  process.env.NIGHTSHIFT_API_KEY ||= "simulated-outage";
+  process.env.NIGHTSHIFT_MODEL ||= "simulated-outage";
 }
 
 let cachedIntake: Record<string, IntakeDecision> | undefined;
@@ -128,6 +142,12 @@ try {
       log(`  warm-up failed after ${Date.now() - w0}ms (${e.message}); continuing`);
     }
   }
+
+  if (args["zetaris-down"]) {
+    step("Simulating a Zetaris outage for the agent phase");
+    process.env.ZETARIS_URL = DEAD_URL;
+  }
+  if (args["nightshift-down"]) step("Simulating a Nightshift outage: the model endpoint refuses connections");
 
   step(`Running ${args.agent} on ${tickets.length} tickets · concurrency ${CONCURRENCY} · intake ${intakeMode}`);
   const outcomes: Record<string, number> = {};
@@ -184,6 +204,10 @@ try {
   // slow_confirm writes its log row late; let those land before reading the truth.
   await new Promise((r) => setTimeout(r, SLOW_MS + 1000));
   stopProcessor();
+  if (args["zetaris-down"]) {
+    process.env.ZETARIS_URL = zetarisUrl;
+    log("  Zetaris outage over (restored for the report)");
+  }
 
   step("Asking Zetaris what was actually paid (dumen.refund_truth)");
   const truth = await getAllRefundTruth();
@@ -223,6 +247,7 @@ try {
     double_refunds: doubles.length,
     money_lost: Number(money(moneyLost)),
     escalations: escalations.length,
+    failures: { zetaris_down: args["zetaris-down"], nightshift_down: args["nightshift-down"] },
     rejections: outcomes.REJECTED ?? 0,
     key_tickets: args.agent === "dumen" ? { "T-017": ticketState("T-017"), "T-018": ticketState("T-018"), "T-020": ticketState("T-020"), "T-021": ticketState("T-021") } : undefined,
     doubles: doubles.map(([order_id, o]) => ({ order_id, payments: o.payments, paid: Number(money(o.paid)), keys: o.keys })),

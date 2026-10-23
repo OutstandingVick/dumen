@@ -24,12 +24,18 @@ function baseUrl(): string {
 }
 
 async function post(path: string, body: unknown, headers: Record<string, string> = {}): Promise<any> {
-  const res = await fetch(baseUrl() + path, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...headers },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(TIMEOUT_MS),
-  });
+  let res: Response;
+  try {
+    res = await fetch(baseUrl() + path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...headers },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+  } catch (e: any) {
+    const why = e.name === "TimeoutError" ? `no answer within ${TIMEOUT_MS / 1000}s` : (e.cause?.code ?? e.cause?.errors?.[0]?.code ?? e.cause?.message ?? e.message);
+    throw new Error(`Zetaris unreachable at ${baseUrl()} (${why})`);
+  }
   const text = await res.text();
   if (!res.ok) throw new Error(`Zetaris ${path} returned ${res.status}: ${text.slice(0, 200)}`);
   return JSON.parse(text);

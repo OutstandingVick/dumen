@@ -8,8 +8,11 @@ import { latestRunId, lessonsOf, listRuns, loadRun, pairFor, refundsOf, timeline
 export const dynamic = "force-dynamic";
 
 const money = (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const runLabel = (r: RunInfo) =>
-  `${r.agent} · seed ${r.seed} · lost ${r.summary?.rates.lost ?? "?"} · ${new Date(r.startedAt).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}`;
+const runLabel = (r: RunInfo) => {
+  const f = r.summary?.failures;
+  const drill = f?.zetaris_down ? " · ⚠ Zetaris down" : f?.nightshift_down ? " · ⚠ Nightshift down" : "";
+  return `${r.agent} · seed ${r.seed} · lost ${r.summary?.rates.lost ?? "?"}${drill} · ${new Date(r.startedAt).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}`;
+};
 
 function Badge({ r }: { r: Refund }) {
   const badges: Array<[string, string]> = [];
@@ -124,7 +127,7 @@ npm run compare`}</pre>
 
   const headline =
     baseline && dumen
-      ? `With ${Math.round((s.rates.lost ?? 0) * 100)}% of processor confirmations lost (seed ${s.seed}), the baseline agent paid ${baseline.summary.double_refunds} order${baseline.summary.double_refunds === 1 ? "" : "s"} twice and lost ${money(baseline.summary.money_lost)}. Dumen paid nothing twice: it rejected ${dumen.summary.rejections ?? 0} already-paid request${dumen.summary.rejections === 1 ? "" : "s"} and escalated ${dumen.summary.escalations ?? 0} case${dumen.summary.escalations === 1 ? "" : "s"} it couldn't verify.`
+      ? `With ${Math.round((s.rates.lost ?? 0) * 100)}% of processor confirmations lost (seed ${s.seed}), the baseline agent paid ${baseline.summary.double_refunds} order${baseline.summary.double_refunds === 1 ? "" : "s"} twice and lost ${money(baseline.summary.money_lost)}. Dumen paid nothing twice: it rejected ${dumen.summary.rejections ?? 0} already-paid request${dumen.summary.rejections === 1 ? "" : "s"} and escalated ${dumen.summary.escalations ?? 0} case${dumen.summary.escalations === 1 ? "" : "s"} for a person to decide.`
       : null;
 
   return (

@@ -100,7 +100,7 @@ export async function runIntake(ticket: Ticket, entityId: string, deps: IntakeDe
 
   // 3. The order is clear; now the model's decision matters.
   if (!decision) {
-    await world.ingest.transition(entityId, "ESCALATED", actor, { provenance: { source: "intake", response: raw.slice(0, 500) }, evidence: check.evidence, reason: "model gave no usable decision" });
+    await world.ingest.transition(entityId, "ESCALATED", actor, { provenance: { source: "intake", response: raw.slice(0, 500) }, evidence: check.evidence, reason: raw.startsWith("generator error") ? `model unavailable (${raw.slice("generator error: ".length)}); no model decision = no refund` : "model gave no usable decision" });
     return { outcome: "ESCALATED", decision };
   }
   if (decision.decision === "decline") {

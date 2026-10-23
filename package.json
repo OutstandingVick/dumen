@@ -17,7 +17,8 @@
     "agents:check": "tsx scripts/agents-check.ts",
     "compare": "tsx scripts/compare.ts",
     "zetaris:setup": "tsx scripts/zetaris-setup.ts",
-    "dashboard": "npm --prefix app install --silent && npm --prefix app run dev"
+    "dashboard": "npm --prefix app install --silent && npm --prefix app run dev",
+    "failure:check": "tsx scripts/failure-check.ts"
   },
   "license": "MIT",
   "dependencies": {
