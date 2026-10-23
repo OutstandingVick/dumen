@@ -1,0 +1,111 @@
+{
+  "saved_at": "2026-10-23T15:33:11.855Z",
+  "run_id": "2026-10-23T15-31-22-910Z_dumen_seed42",
+  "decisions": {
+    "T-001": {
+      "decision": "refund",
+      "amount": 35.55,
+      "reason": "Package lost in transit, full refund approved."
+    },
+    "T-002": {
+      "decision": "refund",
+      "amount": 145.91,
+      "reason": "Customer cancelled within one hour of order placement and was incorrectly charged; full refund approved per short-cancellation policy."
+    },
+    "T-003": {
+      "decision": "refund",
+      "amount": 105.89,
+      "reason": "Product does not match description; full refund approved per customer request and standard policy."
+    },
+    "T-004": {
+      "decision": "refund",
+      "amount": 274.78,
+      "reason": "Order never shipped, full refund approved."
+    },
+    "T-005": {
+      "decision": "refund",
+      "amount": 107.66,
+      "reason": "Customer received wrong size and is within the open return window; full refund approved per store policy."
+    },
+    "T-006": {
+      "decision": "refund",
+      "amount": 168.88,
+      "reason": "Package lost in transit; full refund approved as per standard lost-package policy."
+    },
+    "T-007": {
+      "decision": "refund",
+      "amount": 43.94,
+      "reason": "Customer cancelled within one hour of ordering; full refund approved per cancellation policy."
+    },
+    "T-008": {
+      "decision": "refund",
+      "amount": 288.54,
+      "reason": "Product does not match description; refund approved per policy."
+    },
+    "T-009": {
+      "decision": "refund",
+      "amount": 290.58,
+      "reason": "Customer received wrong size and is within the open return window; full refund approved per store policy."
+    },
+    "T-010": {
+      "decision": "refund",
+      "amount": 159.66,
+      "reason": "Package lost in transit, full refund approved."
+    },
+    "T-011": {
+      "decision": "refund",
+      "amount": 229.07,
+      "reason": "Order never shipped, full refund approved."
+    },
+    "T-012": {
+      "decision": "refund",
+      "amount": 134.7,
+      "reason": "Package lost in transit, full refund approved."
+    },
+    "T-013": {
+      "decision": "refund",
+      "amount": 100.59,
+      "reason": "Customer received wrong size and is within the open return window; full refund approved per return policy."
+    },
+    "T-014": {
+      "decision": "refund",
+      "amount": 283.59,
+      "reason": "Customer received wrong size and is within the return window; full refund approved per return policy."
+    },
+    "T-015": {
+      "decision": "refund",
+      "amount": 189.48,
+      "reason": "Order ORD-1025 was charged but never shipped; full refund approved."
+    },
+    "T-016": {
+      "decision": "refund",
+      "amount": 90.62,
+      "reason": "Order never shipped, full refund approved."
+    },
+    "T-017": {
+      "decision": "refund",
+      "amount": 67.17,
+      "reason": "Previous refund request not confirmed; processing approved refund per customer request."
+    },
+    "T-018": {
+      "decision": "refund",
+      "amount": 95.94,
+      "reason": "Customer previously requested refund but confirmation was not provided; refund approved per request and standard policy."
+    },
+    "T-019": {
+      "decision": "refund",
+      "amount": 168.89,
+      "reason": "Customer received wrong size and is within the open return window; full refund approved per return policy."
+    },
+    "T-020": {
+      "decision": "refund",
+      "amount": 84.77,
+      "reason": "Customer reported previous refund failure; re-processing approved for full order amount."
+    },
+    "T-021": {
+      "decision": "refund",
+      "amount": 170.58,
+      "reason": "Customer reported refund not received despite system status; full refund re-approved per reported non-receipt."
+    }
+  }
+}

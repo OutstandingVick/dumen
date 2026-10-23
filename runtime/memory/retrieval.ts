@@ -9,6 +9,7 @@ export interface RetrievalQuery {
   entities?: string[];
   agentId: string;
   strategy?: MemoryContext["trace"]["strategy"];
+  namespacePrefix?: string; // scope retrieval to one agent's kind of lessons
 }
 
 const TOP_N = 5;
@@ -45,7 +46,7 @@ export class MemoryRetrievalService {
   }
 
   retrieve(q: RetrievalQuery, topN = TOP_N): MemoryContext {
-    const all = this.store.all();
+    const all = this.store.all().filter((m) => !q.namespacePrefix || m.namespace.startsWith(q.namespacePrefix));
     const superseded = new Set(all.map((m) => m.supersedes).filter((s): s is string => !!s));
     const ranked = all
       .map((m) => ({ m, relevance: this.score(m, q, superseded) }))

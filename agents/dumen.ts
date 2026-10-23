@@ -18,6 +18,7 @@ export interface DumenDeps {
   callTimeoutMs: number;
   verifier: Omit<VerifierDeps, "world" | "memory" | "trace">;
   cachedIntake?: Record<string, IntakeDecision>;
+  modelSummaries?: boolean; // false: escalation uses the template summary (cached / benchmark runs)
 }
 
 export interface DumenResult {
@@ -53,7 +54,7 @@ export async function runDumen(ticket: Ticket, deps: DumenDeps): Promise<DumenRe
     order: { amount: Number(rows[0].amount), currency: rows[0].currency },
     cached: deps.cachedIntake?.[ticket.ticket_id],
   });
-  if (intake.outcome === "ESCALATED") await escalate(id, { world, trace, ticketMessage: ticket.message });
+  if (intake.outcome === "ESCALATED") await escalate(id, { world, trace, ticketMessage: ticket.message, useModel: deps.modelSummaries });
   if (intake.outcome !== "APPROVED") return done(intake.decision);
 
   // Executor ⇄ Verifier loop, bounded by MAX_RETRIES.
@@ -71,7 +72,7 @@ export async function runDumen(ticket: Ticket, deps: DumenDeps): Promise<DumenRe
       await deps.ordersDb.query("UPDATE refunds SET internal_status = 'pending' WHERE refund_key = $1", [refundKey]);
     }
     if (v.decision === "ESCALATED") {
-      await escalate(id, { world, trace, ticketMessage: ticket.message });
+      await escalate(id, { world, trace, ticketMessage: ticket.message, useModel: deps.modelSummaries });
       return done(intake.decision);
     }
     // RETRY_SAME_KEY → next turn executes again with the same refund_key

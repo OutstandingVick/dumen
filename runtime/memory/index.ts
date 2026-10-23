@@ -15,9 +15,10 @@ export interface Memory {
   mining: MemoryMiningService;
 }
 
-// Run start: open the tiers and hydrate long-term memory (warm start).
-export function openMemory(opts: MemoryStoreOptions): Memory & { hydrated: number } {
+// Run start: open the tiers and hydrate long-term memory (warm start). fresh: skip the
+// warm start so a run depends on nothing saved by earlier runs (reproducible benchmarks).
+export function openMemory(opts: MemoryStoreOptions & { fresh?: boolean }): Memory & { hydrated: number } {
   const store = new MemoryStoreService(opts);
-  const hydrated = store.hydrate();
+  const hydrated = opts.fresh ? 0 : store.hydrate();
   return { store, retrieval: new MemoryRetrievalService(store), mining: new MemoryMiningService(store), hydrated };
 }

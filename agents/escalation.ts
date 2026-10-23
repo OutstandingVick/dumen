@@ -30,7 +30,7 @@ Do not recommend paying. No preamble.`;
 // Serialize writes to the queue file across concurrent tickets.
 let queueLock: Promise<unknown> = Promise.resolve();
 
-export async function escalate(entityId: string, deps: { world: World; trace: Trace; ticketMessage: string }): Promise<EscalationCase> {
+export async function escalate(entityId: string, deps: { world: World; trace: Trace; ticketMessage: string; useModel?: boolean }): Promise<EscalationCase> {
   const ctx = deps.world.context.getRefundContext(entityId)!;
   const e = ctx.entity;
   const reason = [...ctx.history].reverse().find((h) => h.to === "ESCALATED")?.reason ?? "escalated";
@@ -45,6 +45,7 @@ export async function escalate(entityId: string, deps: { world: World; trace: Tr
   let summary: string;
   let summary_source: EscalationCase["summary_source"] = "model";
   try {
+    if (deps.useModel === false) throw new Error("model disabled for this run");
     // Model thinking can leak before the answer; keep the last paragraph.
     const text = (await generator(JSON.stringify(evidence, null, 2), null, SYSTEM_PROMPT)).text.trim();
     summary = text.split(/\n\s*\n/).pop()!.trim();
