@@ -6,3 +6,4 @@ logs/*
 data/processor/
 *.log
 .DS_Store
+.dumen/

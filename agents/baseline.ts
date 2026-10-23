@@ -1,7 +1,7 @@
 // Baseline agent: the bug. It decides from the ticket alone, pays, and on a timeout
 // retries from memory. It never checks whether the processor already paid.
 import type pg from "pg";
-import { generate } from "../runtime/generator.js";
+import { generator } from "../runtime/generator.js";
 import type { Trace } from "../runtime/trace.js";
 
 export interface Ticket {
@@ -34,7 +34,11 @@ function parseDecision(text: string): { decision: string; amount: number; reason
   for (const m of (matches ?? []).reverse()) {
     try {
       const d = JSON.parse(m);
-      if (typeof d.decision === "string") return { decision: d.decision.toLowerCase(), amount: Number(d.amount), reason: String(d.reason ?? "") };
+      if (typeof d.decision === "string") {
+        // The model sometimes says "approve(d)" instead of "refund"; they mean the same here.
+        const decision = /^(refund|approved?)$/i.test(d.decision.trim()) ? "refund" : d.decision.toLowerCase();
+        return { decision, amount: Number(d.amount), reason: String(d.reason ?? "") };
+      }
     } catch {
       // not JSON, try the previous match
     }
@@ -83,7 +87,7 @@ export async function runBaseline(ticket: Ticket, deps: BaselineDeps): Promise<{
   ].join("\n");
   let text: string;
   try {
-    text = (await generate(prompt, SYSTEM_PROMPT)).text;
+    text = (await generator(prompt, null, SYSTEM_PROMPT)).text;
   } catch (e: any) {
     t("decide", { prompt }, null, `generator error: ${e.message}`);
     return { outcome: "error" };

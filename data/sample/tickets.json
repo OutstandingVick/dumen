@@ -138,5 +138,12 @@
     "message": "my refund failed, send it again",
     "amount_requested": 84.77,
     "currency": "USD"
+  },
+  {
+    "ticket_id": "T-021",
+    "order_id": "ORD-1008",
+    "message": "Your system says my refund went through but I never received it. Where is my money?",
+    "amount_requested": 170.58,
+    "currency": "EUR"
   }
 ]

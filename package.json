@@ -11,7 +11,9 @@
     "truth:check": "tsx scripts/truth-check.ts",
     "freshness:check": "tsx scripts/freshness-check.ts",
     "processor": "tsx processor/server.ts",
-    "chaos": "tsx scripts/chaos.ts"
+    "chaos": "tsx scripts/chaos.ts",
+    "world:check": "tsx scripts/world-check.ts",
+    "memory:check": "tsx scripts/memory-check.ts"
   },
   "license": "MIT",
   "dependencies": {

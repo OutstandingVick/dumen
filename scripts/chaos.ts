@@ -18,7 +18,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const { values: args } = parseArgs({
   options: {
     agent: { type: "string", default: "baseline" },
-    tickets: { type: "string", default: "20" },
+    tickets: { type: "string", default: "21" },
     seed: { type: "string", default: "42" },
     lost: { type: "string", default: "0.2" },
     slow: { type: "string", default: "0" },

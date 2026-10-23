@@ -1,9 +1,23 @@
-// The one place in Dumen that talks to an LLM. Every agent calls generate().
+// The one place in Dumen that talks to an LLM. Every agent calls generator().
+// Signature matches the Meterless Agent Engines README exactly:
+//   generator(prompt, attachments, systemPrompt, onStream, abortSignal) → { text }
+// Point it at a different OpenAI-compatible provider by changing .env, nothing else.
 import OpenAI from "openai";
 
-export interface GenerateResult {
+export interface GeneratorResult {
   text: string;
 }
+
+// Text attachments are appended to the prompt; the refund flow doesn't use binary ones.
+export type Attachment = string | { name?: string; content: string };
+
+export type Generator = (
+  prompt: string,
+  attachments?: Attachment[] | null,
+  systemPrompt?: string | null,
+  onStream?: ((chunk: string) => void) | null,
+  abortSignal?: AbortSignal | null,
+) => Promise<GeneratorResult>;
 
 const TIMEOUT_MS = Number(process.env.NIGHTSHIFT_TIMEOUT_MS ?? 30_000);
 
@@ -31,22 +45,43 @@ function sampleResponse(prompt: string): string {
   return "sample mode response";
 }
 
-export async function generate(prompt: string, systemPrompt: string): Promise<GenerateResult> {
+function withAttachments(prompt: string, attachments?: Attachment[] | null): string {
+  if (!attachments?.length) return prompt;
+  const blocks = attachments.map((a, i) =>
+    typeof a === "string" ? `[ATTACHMENT ${i + 1}]\n${a}` : `[ATTACHMENT ${i + 1}${a.name ? `: ${a.name}` : ""}]\n${a.content}`,
+  );
+  return `${prompt}\n\n${blocks.join("\n\n")}`;
+}
+
+export const generator: Generator = async (prompt, attachments, systemPrompt, onStream, abortSignal) => {
+  const fullPrompt = withAttachments(prompt, attachments);
   if (process.env.SAMPLE_MODE === "true") {
-    return { text: sampleResponse(prompt) };
+    const text = sampleResponse(fullPrompt);
+    onStream?.(text);
+    return { text };
   }
   const model = process.env.NIGHTSHIFT_MODEL;
   if (!model) throw new Error("NIGHTSHIFT_MODEL must be set (or use SAMPLE_MODE=true)");
 
-  const res = await getClient().chat.completions.create(
-    {
-      model,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: prompt },
-      ],
-    },
-    { timeout: TIMEOUT_MS },
-  );
+  const signal = abortSignal ? AbortSignal.any([abortSignal, AbortSignal.timeout(TIMEOUT_MS)]) : AbortSignal.timeout(TIMEOUT_MS);
+  const messages = [
+    ...(systemPrompt ? [{ role: "system" as const, content: systemPrompt }] : []),
+    { role: "user" as const, content: fullPrompt },
+  ];
+
+  if (onStream) {
+    const stream = await getClient().chat.completions.create({ model, messages, stream: true }, { signal });
+    let text = "";
+    for await (const chunk of stream) {
+      const delta = chunk.choices[0]?.delta?.content ?? "";
+      if (delta) {
+        text += delta;
+        onStream(delta);
+      }
+    }
+    return { text };
+  }
+
+  const res = await getClient().chat.completions.create({ model, messages }, { signal });
   return { text: res.choices[0]?.message?.content ?? "" };
-}
+};

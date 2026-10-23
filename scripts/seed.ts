@@ -88,6 +88,15 @@ tickets.push({
   amount_requested: target.amount,
   currency: target.currency,
 });
+// ORD-1008 is in conflict (we recorded a refund, the processor has none): only escalation is safe.
+const conflicted = orders[7];
+tickets.push({
+  ticket_id: "T-021",
+  order_id: conflicted.order_id,
+  message: "Your system says my refund went through but I never received it. Where is my money?",
+  amount_requested: conflicted.amount,
+  currency: conflicted.currency,
+});
 
 async function withClient(url: string, fn: (c: pg.Client) => Promise<void>) {
   const c = new pg.Client({ connectionString: url, connectionTimeoutMillis: 10_000, statement_timeout: 10_000 });

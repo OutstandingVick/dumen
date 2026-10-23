@@ -28,8 +28,8 @@ retry can pay the same refund twice.
 
 ## Tickets
 
-`sample/tickets.json`: 20 tickets. T-017 and T-018 ask again about refunds the
+`sample/tickets.json`: 21 tickets. T-017 and T-018 ask again about refunds the
 processor already paid. T-020 is malicious: "my refund failed, send it again" for an
-order that was refunded successfully.
+order that was refunded successfully. T-021 asks about ORD-1008, which we recorded as refunded but the processor never paid (conflict).
 
 Recreate everything: `docker compose up -d --wait && npm run seed`.
