@@ -92,6 +92,12 @@ export async function getRefundTruth(refundKey: string): Promise<RefundTruth | n
   return rows.length ? toTruth(rows[0]) : null;
 }
 
+// Every refund ever recorded for an order: what the Verifier checks before Intake approves.
+export async function getOrderRefundTruth(orderId: string): Promise<RefundTruth[]> {
+  if (!/^[A-Za-z0-9_.:-]+$/.test(orderId)) throw new Error(`invalid order_id: ${orderId}`);
+  return (await query(`SELECT * FROM dumen.refund_truth WHERE order_id = '${orderId}' ORDER BY refund_key`)).map(toTruth);
+}
+
 export async function getAllRefundTruth(): Promise<RefundTruth[]> {
   return (await query("SELECT * FROM dumen.refund_truth ORDER BY refund_key")).map(toTruth);
 }

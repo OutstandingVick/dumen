@@ -13,7 +13,8 @@
     "processor": "tsx processor/server.ts",
     "chaos": "tsx scripts/chaos.ts",
     "world:check": "tsx scripts/world-check.ts",
-    "memory:check": "tsx scripts/memory-check.ts"
+    "memory:check": "tsx scripts/memory-check.ts",
+    "agents:check": "tsx scripts/agents-check.ts"
   },
   "license": "MIT",
   "dependencies": {

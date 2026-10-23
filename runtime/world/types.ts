@@ -19,7 +19,7 @@ export const REFUND_STATES = [
 ] as const;
 export type RefundState = (typeof REFUND_STATES)[number];
 
-export const TERMINAL_STATES: ReadonlySet<RefundState> = new Set(["REJECTED", "CONFIRMED", "FAILED_DEFINITE", "ESCALATED"]);
+export const TERMINAL_STATES: ReadonlySet<RefundState> = new Set(["REJECTED", "CONFIRMED", "ESCALATED"]);
 
 // Where a belief came from: the query or response that justified it.
 export interface Provenance {

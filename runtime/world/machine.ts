@@ -14,7 +14,8 @@ const TRANSITIONS: Record<RefundState, readonly RefundState[]> = {
   EXECUTING: ["CONFIRMED", "UNKNOWN", "FAILED_DEFINITE"],
   CONFIRMED: [],
   UNKNOWN: ["VERIFYING"], // invariant (b): UNKNOWN can only go to VERIFYING
-  FAILED_DEFINITE: [],
+  // A 502 is checked too: the Verifier confirms nothing was paid before any retry.
+  FAILED_DEFINITE: ["VERIFYING"],
   VERIFYING: ["CONFIRMED", "RETRY_SAME_KEY", "ESCALATED"],
   RETRY_SAME_KEY: ["EXECUTING"],
   ESCALATED: [],

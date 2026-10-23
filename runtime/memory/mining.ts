@@ -10,7 +10,7 @@ export interface VerificationOutcome {
   taskId: string;
   refundKey: string;
   orderId: string;
-  executorResult: "timeout" | "accepted";
+  executorResult: "timeout" | "accepted" | "failed";
   verdict: "paid" | "not_paid" | "conflict" | "unavailable";
   settleMs: number | null; // call start → first refund_truth check that showed it paid
 }
@@ -25,7 +25,7 @@ export class MemoryMiningService {
     const mined: MemoryRecord[] = [];
     if (o.verdict === "paid" && o.settleMs !== null) mined.push(this.settleDelay(o));
     if (o.verdict === "paid" && o.executorResult === "timeout") mined.push(this.counter(o, "paid_despite_timeout"));
-    if (o.verdict === "not_paid") mined.push(this.counter(o, "not_paid_after_uncertain_call"));
+    if (o.verdict === "not_paid" && o.executorResult !== "failed") mined.push(this.counter(o, "not_paid_after_uncertain_call"));
     return mined;
   }
 

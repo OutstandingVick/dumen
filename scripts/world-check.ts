@@ -82,6 +82,18 @@ check("CONFIRMED → EXECUTING refused", await refused(w.ingest.transition(t2, "
 await w.ingest.observe(t2, verifier, { provenance: { source: "zetaris" }, evidence: ev("conflict", 2) });
 check("success_count 2 raises DUPLICATE_PAYMENT alert", w.context.getRefundContext(t2)!.alerts.some((a) => a.startsWith("DUPLICATE_PAYMENT")));
 
+// 4b. A 502 is not a dead end, but it is never re-executed without verification either
+const t4 = (await w.ingest.receive({ ticket_id: "T-903", order_id: "ORD-4" }, intake)).entity.id;
+for (const s of ["INTAKE_REVIEW", "APPROVED", "EXECUTING", "FAILED_DEFINITE"] as const) await w.ingest.transition(t4, s, executor, { provenance: prov });
+check("FAILED_DEFINITE is not terminal", !w.context.getRefundContext(t4)!.terminal);
+check("FAILED_DEFINITE → EXECUTING refused", await refused(w.ingest.transition(t4, "EXECUTING", executor, { provenance: prov }), "ILLEGAL_TRANSITION"));
+check("FAILED_DEFINITE → RETRY_SAME_KEY refused", await refused(w.ingest.transition(t4, "RETRY_SAME_KEY", verifier, { provenance: prov, evidence: ev("not_paid", 0) }), "ILLEGAL_TRANSITION"));
+await w.ingest.transition(t4, "VERIFYING", verifier, { provenance: prov });
+await w.ingest.transition(t4, "RETRY_SAME_KEY", verifier, { provenance: { source: "zetaris" }, evidence: ev("not_paid", 0) });
+await w.ingest.transition(t4, "EXECUTING", executor, { provenance: prov });
+await w.ingest.transition(t4, "CONFIRMED", executor, { provenance: { source: "processor", response: { http: 200 } } });
+check("502 → verified not_paid → retry same key → CONFIRMED", w.store.entity(t4)!.state === "CONFIRMED" && w.store.entity(t4)!.executions === 2);
+
 // 5. Concurrency: two executors race to execute the same approved refund
 const t3 = (await w.ingest.receive({ ticket_id: "T-902", order_id: "ORD-3" }, intake)).entity.id;
 await w.ingest.transition(t3, "INTAKE_REVIEW", intake, { provenance: prov });
