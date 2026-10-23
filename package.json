@@ -14,7 +14,8 @@
     "chaos": "tsx scripts/chaos.ts",
     "world:check": "tsx scripts/world-check.ts",
     "memory:check": "tsx scripts/memory-check.ts",
-    "agents:check": "tsx scripts/agents-check.ts"
+    "agents:check": "tsx scripts/agents-check.ts",
+    "compare": "tsx scripts/compare.ts"
   },
   "license": "MIT",
   "dependencies": {
