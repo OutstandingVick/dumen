@@ -28,7 +28,7 @@ Dumen treats "I don't know if it was paid" as a state of its own. Nothing in tha
 ## Architecture
 
 ```mermaid
-flowchart LR
+flowchart TB
   T[Ticket] --> I
 
   subgraph Agents
