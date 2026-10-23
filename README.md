@@ -113,7 +113,7 @@ Memory that makes the Verifier wait the right amount of time. Mounted in [runtim
 [runtime/generator.ts](runtime/generator.ts) is the only model call in the project, with the README's signature `generator(prompt, attachments, systemPrompt, onStream, abortSignal) → { text }`. The provider is chosen in `.env`, with a 60s timeout and no silent SDK retries. `SAMPLE_MODE=true` returns fixed answers with no credentials.
 
 ### Meterless Nightshift + NVIDIA Nemotron
-The AI provider is Meterless Nightshift's local OpenAI-compatible endpoint (`NIGHTSHIFT_BASE_URL`), pinned to **NVIDIA Nemotron 3.5 Lightning** (30B total, 3B active parameters; set in `NIGHTSHIFT_MODEL`). Nightshift's response metadata confirms the requested and serving model are the same. Nemotron does two jobs: Intake decisions and escalation case summaries. It never decides whether money was paid; only the code Verifier does.
+The AI provider is Meterless Nightshift's local OpenAI-compatible endpoint (`NIGHTSHIFT_BASE_URL`), pinned to **NVIDIA Nemotron 3.5 Lightning**, `NIGHTSHIFT_MODEL=nvidia/nemotron-3.5-lightning-30b-a3b` (30B total, 3B active parameters). Nightshift's response metadata confirms the requested and serving model are the same. Nemotron does two jobs: Intake decisions and escalation case summaries. It never decides whether money was paid; only the code Verifier does.
 
 ### Zetaris: unified semantic layer
 Two separate Postgres databases are federated in Zetaris, and one view answers "was this refund actually paid?":
