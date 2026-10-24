@@ -11,5 +11,5 @@ export async function POST(req: Request) {
   if (!(lost >= 0 && lost <= 1)) return NextResponse.json({ error: "lost must be between 0 and 1" }, { status: 400 });
   const busy = runningJob();
   if (busy) return NextResponse.json({ error: "a comparison is already running", job: busy }, { status: 409 });
-  return NextResponse.json({ job: startCompare(seed, lost) });
+  return NextResponse.json({ job: startCompare(seed, lost, body.live === true) });
 }

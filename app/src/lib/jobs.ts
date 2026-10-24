@@ -11,8 +11,11 @@ const MAX_MS = 15 * 60_000;
 
 export interface Job {
   id: string;
-  kind: "compare";
+  kind: "compare" | "request";
   args: Record<string, string>;
+  run?: string; // request: the interactive run it lands in
+  entity?: string; // request: the World Model action id
+  result?: Record<string, unknown>; // request: the runner's @@DONE payload
   status: "running" | "done" | "failed";
   log: string;
   startedAt: string;
@@ -41,16 +44,19 @@ export function runningJob(): Job | null {
   return null;
 }
 
-export function startCompare(seed: number, lost: number): Job {
-  const id = `compare-${Date.now()}`;
-  const job: Job = { id, kind: "compare", args: { seed: String(seed), lost: String(lost) }, status: "running", log: "", startedAt: new Date().toISOString() };
+// Run a repo script as a job; `onLine` sees each stdout line (to pick up markers).
+function runJob(job: Job, script: string, argv: string[], onLine?: (line: string) => void): Job {
   save(job);
-  const p = spawn("npx", ["tsx", "scripts/compare.ts", "--seeds", String(seed), "--lost", String(lost), "--no-control"], {
-    cwd: ROOT,
-    stdio: ["ignore", "pipe", "pipe"],
-  });
+  const p = spawn("npx", ["tsx", script, ...argv], { cwd: ROOT, stdio: ["ignore", "pipe", "pipe"] });
+  let pending = "";
   const append = (d: Buffer) => {
     job.log += d.toString();
+    if (onLine) {
+      pending += d.toString();
+      const lines = pending.split("\n");
+      pending = lines.pop() ?? "";
+      lines.forEach(onLine);
+    }
     save(job);
   };
   p.stdout.on("data", append);
@@ -64,6 +70,51 @@ export function startCompare(seed: number, lost: number): Job {
     save(job);
   });
   return job;
+}
+
+export function startCompare(seed: number, lost: number, live: boolean): Job {
+  const job: Job = { id: `compare-${Date.now()}`, kind: "compare", args: { seed: String(seed), lost: String(lost), mode: live ? "live" : "cached" }, status: "running", log: "", startedAt: new Date().toISOString() };
+  return runJob(job, "scripts/compare.ts", ["--seeds", String(seed), "--lost", String(lost), "--no-control", ...(live ? ["--live"] : [])]);
+}
+
+export interface RequestParams {
+  kind: "refund" | "payout";
+  order?: string;
+  message?: string;
+  seller?: string;
+  amount?: number;
+  chaos: string;
+  zetarisDown: boolean;
+  nightshiftDown: boolean;
+}
+
+// One request through the real Dumen loop (scripts/request.ts). The runner announces its
+// run and action id early, so the dashboard can follow the World Model events live.
+export function startRequest(r: RequestParams): Job {
+  const argv = ["--kind", r.kind, "--chaos", r.chaos];
+  if (r.kind === "refund") argv.push("--order", r.order!, "--message", r.message!);
+  else argv.push("--seller", r.seller!, "--amount", String(r.amount));
+  if (r.zetarisDown) argv.push("--zetaris-down");
+  if (r.nightshiftDown) argv.push("--nightshift-down");
+  const job: Job = {
+    id: `request-${Date.now()}`,
+    kind: "request",
+    args: { kind: r.kind, subject: r.kind === "refund" ? r.order! : r.seller!, chaos: r.chaos, zetarisDown: String(r.zetarisDown), nightshiftDown: String(r.nightshiftDown) },
+    status: "running",
+    log: "",
+    startedAt: new Date().toISOString(),
+  };
+  return runJob(job, "scripts/request.ts", argv, (line) => {
+    if (line.startsWith("@@RUN ")) job.run = line.slice(6).trim();
+    else if (line.startsWith("@@ENTITY ")) job.entity = line.slice(9).trim();
+    else if (line.startsWith("@@DONE ")) {
+      try {
+        job.result = JSON.parse(line.slice(7));
+      } catch {
+        // keep the raw log
+      }
+    }
+  });
 }
 
 export function runDecide(run: string, entity: string, verdict: "approve" | "reject", reason: string): Promise<{ ok: boolean; state: string | null; reason: string }> {

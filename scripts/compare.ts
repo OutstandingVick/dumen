@@ -1,7 +1,8 @@
 // Baseline vs Dumen on the same seeds, side by side, and the Phase 3 gate.
 //   npm run compare                      (seeds 42,1,7 at --lost 0.2, plus a lost 0 control)
 //   npm run compare -- --seeds 42 --lost 0.3
-// Reproducible: the baseline runs in sample mode, Dumen replays cached Nemotron intake
+// Reproducible by default: the baseline runs in sample mode, Dumen replays cached Nemotron intake
+// (--live: Dumen decides on live Nemotron instead; slower and not reproducible)
 // decisions with --fresh-memory, so every run of this script prints the same table.
 import "dotenv/config";
 import { spawn } from "node:child_process";
@@ -17,6 +18,7 @@ const { values: args } = parseArgs({
     seeds: { type: "string", default: "42,1,7" },
     lost: { type: "string", default: "0.2" },
     control: { type: "boolean", default: true },
+    live: { type: "boolean", default: false }, // Dumen intake on live Nemotron instead of the cached decisions
   },
 });
 
@@ -48,11 +50,12 @@ interface Result {
 }
 
 function runChaos(agent: "baseline" | "dumen", seed: string, lost: string): Promise<Result> {
-  const extra = agent === "dumen" ? ["--cached-intake", "--fresh-memory"] : [];
+  const extra = agent === "dumen" ? [...(args.live ? [] : ["--cached-intake"]), "--fresh-memory"] : [];
   return new Promise((resolve, reject) => {
     const p = spawn("npx", ["tsx", "scripts/chaos.ts", "--agent", agent, "--seed", seed, "--lost", lost, "--quiet", ...extra], {
       cwd: ROOT,
-      env: { ...process.env, SAMPLE_MODE: "true" },
+      // Baseline always uses sample decisions; Dumen goes live on Nemotron with --live.
+      env: { ...process.env, SAMPLE_MODE: agent === "dumen" && args.live ? "false" : "true" },
       stdio: ["ignore", "pipe", "pipe"],
     });
     let out = "";

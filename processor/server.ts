@@ -21,6 +21,7 @@ const { values: args } = parseArgs({
     mode: { type: "string", default: "naive" },
     "hang-ms": { type: "string", default: "15000" }, // how long lost/down calls hang before the socket drops
     "slow-ms": { type: "string", default: "3000" }, // how late slow_confirm writes its log row
+    first: { type: "string" }, // force the very next call's behaviour (dashboard chaos control); then the rates apply
   },
 });
 
@@ -32,6 +33,9 @@ if (rates.lost + rates.slow + rates.fail + rates.down > 1) throw new Error("--lo
 if (args.mode !== "naive" && args.mode !== "idempotent") throw new Error("--mode must be naive or idempotent");
 const HANG_MS = Number(args["hang-ms"]);
 const SLOW_MS = Number(args["slow-ms"]);
+const BEHAVIOURS: Behaviour[] = ["ok", "lost_response", "real_fail", "slow_confirm", "down"];
+if (args.first && !BEHAVIOURS.includes(args.first as Behaviour)) throw new Error(`--first must be one of ${BEHAVIOURS.join(", ")}`);
+let forced: Behaviour | null = (args.first as Behaviour) ?? null;
 
 // mulberry32: same seed → same sequence of behaviours, call by call
 function prng(seed: number) {
@@ -46,6 +50,11 @@ function prng(seed: number) {
 const rand = prng(Number(args.seed));
 
 function nextBehaviour(): Behaviour {
+  if (forced) {
+    const b = forced;
+    forced = null;
+    return b;
+  }
   let r = rand();
   if ((r -= rates.lost) < 0) return "lost_response";
   if ((r -= rates.slow) < 0) return "slow_confirm";

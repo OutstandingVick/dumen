@@ -254,7 +254,7 @@ export async function verifyAfterUncertainCall(
   let reason: string;
   if (evidence.success_count === 1) {
     decision = "CONFIRMED";
-    reason = `processor paid exactly once (${evidence.paid_amount}); confirmed without re-executing`;
+    reason = `${kind === "payout" ? "bank" : "processor"} paid exactly once (${evidence.paid_amount}); confirmed without re-executing`;
   } else if (evidence.success_count > 1) {
     decision = "ESCALATED";
     reason = `processor paid ${evidence.success_count}× — duplicate payment, human review`;

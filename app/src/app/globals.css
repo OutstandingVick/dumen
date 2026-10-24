@@ -207,3 +207,34 @@ footer b { color: var(--ink); }
 /* ── Tagline ─────────────────────────────────────────────── */
 .tagline { margin: -10px 0 20px; font-size: 15px; color: var(--muted); }
 .tagline b { color: var(--ink); background: linear-gradient(transparent 60%, var(--sun) 60%); }
+
+/* ── New request panel ───────────────────────────────────── */
+.request-grid { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); gap: 22px; align-items: start; }
+.request-panel .fields { display: grid; gap: 10px; margin: 12px 0; }
+.request-panel label { display: grid; gap: 4px; font-weight: 600; font-size: 13px; }
+.request-panel textarea { font-family: var(--display); resize: vertical; }
+.switch button { border: 0; box-shadow: none; padding: 5px 14px; border-radius: 999px; background: transparent; color: var(--muted); font-weight: 700; font-size: 13px; }
+.switch button.on { background: var(--sun); color: var(--ink); }
+.switch button:hover:not(:disabled) { transform: none; box-shadow: none; color: var(--ink); }
+.chaos { border: 1.5px dashed var(--line); border-radius: 12px; padding: 10px 12px; display: grid; gap: 8px; background: #fffdf8; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { padding: 5px 10px; font-size: 13px; box-shadow: 1px 1px 0 var(--ink); }
+.chip.on { background: var(--ink); color: #fff; }
+.toggle { display: flex !important; grid-auto-flow: column; align-items: center; gap: 8px; font-weight: 600; }
+.toggle input { width: 16px; height: 16px; accent-color: var(--cherry); }
+.live { border-left: 2px dashed var(--line); padding-left: 20px; min-height: 120px; }
+.live-dot { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; color: var(--cherry); }
+.live-dot::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--cherry); animation: pulse 1.2s infinite; }
+@media (max-width: 980px) {
+  .request-grid { grid-template-columns: 1fr; }
+  .live { border-left: 0; padding-left: 0; border-top: 2px dashed var(--line); padding-top: 14px; }
+}
+
+/* ── Comparison controls + progress ──────────────────────── */
+.compare { display: grid; gap: 6px; justify-items: end; }
+.switch.small button { padding: 4px 10px; font-size: 12px; }
+.progress { width: min(560px, 100%); display: grid; gap: 4px; }
+.progress .bar { height: 10px; border: 2px solid var(--ink); border-radius: 999px; background: #fff; overflow: hidden; }
+.progress .bar i { display: block; height: 100%; background: repeating-linear-gradient(45deg, var(--sun), var(--sun) 8px, var(--tangerine) 8px, var(--tangerine) 16px); transition: width 0.6s; }
+.progress .hint { font-family: var(--mono); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 980px) { .compare { justify-items: start; } }

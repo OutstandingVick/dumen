@@ -9,7 +9,7 @@ export const LOGS = join(ROOT, "logs");
 // Committed demo runs (a live Nemotron run and its baseline), so a fresh clone has something real to show.
 export const DEMO = join(ROOT, "samples", "demo");
 const RUN_DIRS = [LOGS, DEMO];
-const RUN_RE = /^(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z)_(baseline|dumen)_seed(\d+)$/;
+const RUN_RE = /^(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z)_(baseline|dumen)_(?:seed(\d+)|(interactive))$/;
 
 export type Agent = "baseline" | "dumen";
 
@@ -33,6 +33,8 @@ export interface Summary {
   overpaid_orders?: Array<{ order_id: string; paid: number; owed: number }>;
   failures?: { zetaris_down?: boolean; nightshift_down?: boolean };
   payouts?: PayoutSummary;
+  interactive?: boolean;
+  requests?: Array<{ at: string; kind: Kind; id: string; subject: string; entity: string; state: string; executions: number; chaos: string; zetaris_down: boolean; nightshift_down: boolean; success_count: number | null; paid_amount: number | null }>;
 }
 
 export interface PayoutSummary {
@@ -55,6 +57,7 @@ export interface RunInfo {
   id: string;
   dir: string; // folder holding this run's files
   demo: boolean; // from samples/demo (committed), not a local run
+  interactive: boolean; // requests made from the dashboard, not a chaos run
   agent: Agent;
   seed: number;
   startedAt: string;
@@ -115,7 +118,7 @@ export function listRuns(): RunInfo[] {
       const summary = readJson<Summary>(join(base, d, "summary.json"));
       if (!summary) continue;
       seen.add(d);
-      runs.push({ id: d, dir: join(base, d), demo: base === DEMO, agent: m[2] as Agent, seed: Number(m[3]), startedAt: isoFromRunStamp(m[1]), summary });
+      runs.push({ id: d, dir: join(base, d), demo: base === DEMO, interactive: !!m[4], agent: m[2] as Agent, seed: Number(m[3] ?? 0), startedAt: isoFromRunStamp(m[1]), summary });
     }
   }
   return runs.sort((a, b) => b.id.localeCompare(a.id));
@@ -351,6 +354,32 @@ export interface TimelineItem {
 }
 
 const HANDOFF = /→/;
+
+// A request still in progress has no summary.json yet; read its world and trace directly.
+export function liveTimeline(runId: string, entityId: string): TimelineItem[] {
+  if (!/^[\w-]+$/.test(runId)) return [];
+  const dir = join(LOGS, runId);
+  const run = { info: { agent: "dumen" }, world: readJsonl<WorldEvent>(join(dir, "world.jsonl")), trace: readJsonl<TraceLine>(join(dir, "trace.jsonl")) } as unknown as Run;
+  return timelineOf(run, entityId);
+}
+
+// Where a running comparison is: the newest run folder created since the job started.
+export function compareProgress(startedAt: string): { agent: Agent; tickets: number; ticketsTotal: number; payoutsPhase: boolean; step: string | null } | null {
+  if (!existsSync(LOGS)) return null;
+  const since = startedAt.replace(/[:.]/g, "-");
+  const dir = readdirSync(LOGS).filter((d) => RUN_RE.test(d) && d >= since).sort().at(-1);
+  if (!dir) return null;
+  const trace = readJsonl<TraceLine>(join(LOGS, dir, "trace.jsonl"));
+  const tickets = new Set(trace.filter((t) => /^T-/.test(t.ticket_id)).map((t) => t.ticket_id)).size;
+  const last = trace.at(-1);
+  return {
+    agent: dir.match(RUN_RE)![2] as Agent,
+    tickets,
+    ticketsTotal: 22,
+    payoutsPhase: trace.some((t) => /batch/.test(t.action) || /^PO-/.test(t.ticket_id)),
+    step: last ? `${last.agent} · ${last.action} · ${last.ticket_id}` : null,
+  };
+}
 
 export function timelineOf(run: Run, key: string): TimelineItem[] {
   if (run.info.agent === "dumen") {

@@ -4,6 +4,7 @@ import { BeeMark } from "@/components/BeeMark";
 import { CompareButton } from "@/components/CompareButton";
 import { CountUp } from "@/components/CountUp";
 import { DecisionForm } from "@/components/DecisionForm";
+import { RequestPanel } from "@/components/RequestPanel";
 import { RunPicker } from "@/components/RunPicker";
 import { Timeline } from "@/components/Timeline";
 import { latestRunId, lessonsOf, listRuns, loadRun, pairFor, refundsOf, timelineOf, type Kind, type Refund, type Run, type RunInfo } from "@/lib/runs";
@@ -12,6 +13,7 @@ export const dynamic = "force-dynamic";
 
 const money = (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const runLabel = (r: RunInfo) => {
+  if (r.interactive) return `dumen · interactive requests · ${r.summary?.requests?.length ?? 0} · ${new Date(r.startedAt).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}`;
   const f = r.summary?.failures;
   const drill = f?.zetaris_down ? " · ⚠ Zetaris down" : f?.nightshift_down ? " · ⚠ Nightshift down" : "";
   return `${r.demo ? "★ demo · " : ""}${r.agent} · seed ${r.seed} · lost ${r.summary?.rates.lost ?? "?"}${drill}${r.summary?.intake === "live" ? " · live Nemotron" : ""} · ${new Date(r.startedAt).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}`;
@@ -133,8 +135,9 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ r
           <p className="hint">Nothing to show until a run happens. Create one from the repo folder:</p>
           <pre>{`docker compose up -d --wait
 npm run compare`}</pre>
-          <p className="hint">or a single run: <code>npm run chaos -- --agent dumen --seed 42 --lost 0.2</code></p>
+          <p className="hint">or a single run: <code>npm run chaos -- --agent dumen --seed 42 --lost 0.2</code>, or process one request below.</p>
         </div>
+        <RequestPanel />
       </main>
     );
   }
@@ -180,11 +183,13 @@ npm run compare`}</pre>
         </div>
         <RunPicker runs={runs.map((r) => ({ id: r.id, label: runLabel(r) }))} current={run.info.id} />
         <div className="spacer" />
-        <CompareButton key={run.info.id} defaultSeed={s.seed} defaultLost={s.rates.lost} />
+        <CompareButton key={run.info.id} defaultSeed={run.info.interactive ? 42 : s.seed} defaultLost={run.info.interactive ? 0.2 : s.rates.lost} />
       </div>
       <p className="tagline">
         Refund and payout agents remember what they did, not whether it worked. <b>Dumen checks before it pays.</b>
       </p>
+
+      <RequestPanel />
 
       {s.failures?.zetaris_down && (
         <div className="banner bad">
@@ -248,6 +253,57 @@ npm run compare`}</pre>
         </div>
       )}
 
+      {run.info.interactive && (
+        <section className="panel">
+          <div className="row" style={{ justifyContent: "space-between", marginBottom: 12 }}>
+            <h2 style={{ margin: 0 }}>Requests in this session · {s.requests?.length ?? 0}</h2>
+            <div className="switch" role="tablist" aria-label="Money movement">
+              <Link href={`/?run=${run.info.id}&kind=refund`} className={kind === "refund" ? "on" : ""} role="tab" aria-selected={kind === "refund"}>
+                🧾 Refunds
+              </Link>
+              <Link href={`/?run=${run.info.id}&kind=payout`} className={kind === "payout" ? "on" : ""} role="tab" aria-selected={kind === "payout"}>
+                🏦 Payouts
+              </Link>
+            </div>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Request</th>
+                <th>Order / seller</th>
+                <th>Chaos</th>
+                <th>Outcome</th>
+                <th className="num">Calls</th>
+                <th className="num">Paid (Zetaris)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {[...(s.requests ?? [])].reverse().map((q) => (
+                <tr key={q.entity}>
+                  <td>
+                    <Link href={`/?run=${run.info.id}&kind=${q.kind}&refund=${q.entity}#trace`} scroll={false}>
+                      {q.kind === "payout" ? "🏦" : "🧾"} {q.id}
+                    </Link>
+                  </td>
+                  <td>{q.subject}</td>
+                  <td>
+                    {q.chaos.replace("_", " ")}
+                    {q.zetaris_down ? " · Zetaris down" : ""}
+                    {q.nightshift_down ? " · Nightshift down" : ""}
+                  </td>
+                  <td>
+                    <span className={`badge ${q.state === "CONFIRMED" ? "b-confirmed" : q.state === "ESCALATED" ? "b-escalated" : "b-rejected"}`}>{q.state.toLowerCase()}</span>
+                  </td>
+                  <td className="num">{q.executions}</td>
+                  <td className="num">{q.success_count === null ? "?" : `${q.success_count}×`}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      )}
+
+      {!run.info.interactive && (
       <section className="panel">
         <div className="row" style={{ justifyContent: "space-between", marginBottom: 12 }}>
           <h2 style={{ margin: 0 }}>
@@ -268,6 +324,7 @@ npm run compare`}</pre>
           <Side run={dumen} agent="dumen" kind={kind} />
         </div>
       </section>
+      )}
 
       <div className="split">
         <section className="panel">

@@ -40,7 +40,7 @@ function finish(ok: boolean, state: string | null, reason: string): never {
 if (!args.run || !args.entity || args.approve === args.reject || !args.reason?.trim()) {
   finish(false, null, "need --run, --entity, exactly one of --approve/--reject, and --reason");
 }
-const runs = readdirSync(join(ROOT, "logs")).filter((d) => /_(baseline|dumen)_seed\d+$/.test(d)).sort();
+const runs = readdirSync(join(ROOT, "logs")).filter((d) => /_(baseline|dumen)_(seed\d+|interactive)$/.test(d)).sort();
 if (runs.at(-1) !== args.run) finish(false, null, "only the newest run can be decided: a later run has reset the databases");
 if (!existsSync(join(ROOT, "logs", args.run!, "world.jsonl"))) finish(false, null, "run has no world model (baseline runs have no escalations)");
 

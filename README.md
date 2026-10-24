@@ -97,6 +97,11 @@ npm run dashboard        # http://localhost:3012
 
 The ops view for a payments lead, built only from run files: your local runs in `logs/`, plus a committed demo in `samples/demo/`. The demo is a live NVIDIA Nemotron run (seed 42, lost 0.2, warm H-MEM, one ticket at a time) with its baseline counterpart, so a fresh clone shows real model-written escalation summaries and lessons loaded from a previous run. It shows what Dumen stopped, why, and what needs attention. A **Refunds / Payouts** switch flips the receipts, the list and the traces between the two. A payout's trace includes its batch steps: the batch send, the per-payout verification, and the unpaid-only re-send. Refund and payout cases share one escalation queue.
 
+**It's also an ops tool, not just a viewer:**
+- **New request:** submit a refund (order + the customer's message) or a payout (seller + amount), then press **Process**. It goes through the real Dumen loop ([scripts/request.ts](scripts/request.ts)): Intake on live Nemotron, Executor, Verifier via Zetaris, and Escalation when needed. The trace streams in from the World Model as each step is written. Requests collect in an "interactive" run, and a new one starts after any chaos run.
+- **Chaos controls:** choose what the processor's next call does (ok, lost reply, slow, fail, down), and toggle Zetaris down or Nightshift down for that request. The call after it behaves normally.
+- **Run comparison:** choose **Cached** (replays saved Nemotron decisions; fast and reproducible) or **Live (Nemotron)**. A progress bar shows the agent, ticket N of 22 or the payout phase, and the current step.
+
 ![Baseline vs Dumen on the same seed: 1,301.12 paid out twice vs 0.00](docs/screenshots/overview.png)
 
 **Run comparison** runs baseline vs Dumen on a seed and lost rate you choose (about 45 seconds), then opens the new run. Each refund's **trace** is every World Model event: which agent, the state change, the reason, and the evidence (the Zetaris query and rows, or the processor response). Handoffs between agents are blue, and the other agent's trace for the same ticket sits underneath:
@@ -220,6 +225,7 @@ Chaos options: `--lost`, `--slow`, `--fail`, `--down` (rates per processor call)
 | `npm run memory:check` | H-MEM across three simulated runs: learn, persist, hydrate, act differently, ledger (15 checks) |
 | `npm run agents:check` | Every processor behaviour through the real agents and Zetaris: lost response, slow confirm, 502 then success, 502 ×3, down, already paid, malicious re-send, conflict (17 checks) |
 | `npm run payouts:check` | Payout drills: a batch half-executed before the drop (only unpaid payouts re-sent, none paid twice), per-payout verification, pre-check holds, a person approving the 5,200 payout, approvals that would overpay refused (PO-0006, T-022) (11 checks) |
+| `npm run request:check` | The dashboard's New-request path: lost confirmation on a single refund and payout (paid exactly once), the same order asked again (rejected), bank down then retry with the same key, Zetaris down and Nightshift down (escalated, nothing paid) (7 checks) |
 | `npm run failure:check` | Fail-safe drills: Zetaris down (whole run and mid-flight), Nightshift down, processor down; nothing paid on a guess (12 checks) |
 | `npm run truth:check` | `refund_truth` gives the expected truth for each seeded case |
 | `npm run freshness:check` | Insert, read, delete, read: the view reflects each change immediately |
