@@ -1,0 +1,47 @@
+{
+  "world": {
+    "services": {
+      "WorldStoreService": "wired",
+      "IngestPipelineService": "wired",
+      "ContextBuilderService": "wired",
+      "EnrichmentService": "not built (no enrichment needed for refunds)",
+      "RelationshipService": "not built (edges implicit on entity)",
+      "ControlPlaneService": "partial — health() only",
+      "SupervisorAgent": "not built — escalations go to the escalation queue (Phase 3 step 3)"
+    },
+    "pipeline": {
+      "reconcile": "wired — duplicate events detected by content-hash eventId and skipped",
+      "cluster_classify": "wired — events grouped per refund entity (stable id from ticket_id + order_id)",
+      "persist_primary": "wired — appended to logs/<runId>/world.jsonl before indexing",
+      "score_measure": "not applicable — refunds have no ranking/velocity",
+      "infer_derived": "wired — invariant violations and duplicate payments become alert events",
+      "persist_edges": "implicit — entity carries order_id/ticket_id; no edge store needed yet",
+      "rebuild_views": "wired — entity state recomputed from the log on every read",
+      "patch_source_items": "not applicable — tickets are immutable inputs",
+      "rebuild_aggregates": "wired — executions/retries/lastEvidence recomputed by reduceEntity",
+      "mark_stale": "not wired — no long-lived entities across runs yet"
+    },
+    "contextBuilder": {
+      "historyBudget": 25,
+      "memories": "not wired yet (H-MEM, step 2)"
+    }
+  },
+  "worldHealth": {
+    "schemaVersion": 1,
+    "runId": "2026-10-24T16-46-26-610Z_dumen_seed42",
+    "events": 150,
+    "entities": 32,
+    "alerts": 0,
+    "states": {
+      "CONFIRMED": 22,
+      "REJECTED": 5,
+      "ESCALATED": 5
+    }
+  },
+  "memory": {
+    "fresh": false,
+    "hydrated": 3,
+    "promoted": [],
+    "longTerm": 3
+  }
+}

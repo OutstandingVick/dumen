@@ -95,7 +95,7 @@ On the bank rail, a lost response executes only the first *k* payouts of the bat
 npm run dashboard        # http://localhost:3012
 ```
 
-The ops view for a payments lead, built only from the run files in `logs/`. It shows what Dumen stopped, why, and what needs attention. A **Refunds / Payouts** switch flips the receipts, the list and the traces between the two. A payout's trace includes its batch steps: the batch send, the per-payout verification, and the unpaid-only re-send. Refund and payout cases share one escalation queue.
+The ops view for a payments lead, built only from run files: your local runs in `logs/`, plus a committed demo in `samples/demo/`. The demo is a live NVIDIA Nemotron run (seed 42, lost 0.2, warm H-MEM, one ticket at a time) with its baseline counterpart, so a fresh clone shows real model-written escalation summaries and lessons loaded from a previous run. It shows what Dumen stopped, why, and what needs attention. A **Refunds / Payouts** switch flips the receipts, the list and the traces between the two. A payout's trace includes its batch steps: the batch send, the per-payout verification, and the unpaid-only re-send. Refund and payout cases share one escalation queue.
 
 ![Baseline vs Dumen on the same seed: 1,301.12 paid out twice vs 0.00](docs/screenshots/overview.png)
 

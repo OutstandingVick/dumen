@@ -6,6 +6,9 @@ import { join, resolve } from "node:path";
 
 export const ROOT = resolve(process.env.DUMEN_ROOT ?? join(process.cwd(), ".."));
 export const LOGS = join(ROOT, "logs");
+// Committed demo runs (a live Nemotron run and its baseline), so a fresh clone has something real to show.
+export const DEMO = join(ROOT, "samples", "demo");
+const RUN_DIRS = [LOGS, DEMO];
 const RUN_RE = /^(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z)_(baseline|dumen)_seed(\d+)$/;
 
 export type Agent = "baseline" | "dumen";
@@ -50,6 +53,8 @@ export interface PayoutSummary {
 
 export interface RunInfo {
   id: string;
+  dir: string; // folder holding this run's files
+  demo: boolean; // from samples/demo (committed), not a local run
   agent: Agent;
   seed: number;
   startedAt: string;
@@ -100,20 +105,25 @@ function isoFromRunStamp(stamp: string): string {
 }
 
 export function listRuns(): RunInfo[] {
-  if (!existsSync(LOGS)) return [];
-  return readdirSync(LOGS)
-    .map((d) => {
+  const seen = new Set<string>();
+  const runs: RunInfo[] = [];
+  for (const base of RUN_DIRS) {
+    if (!existsSync(base)) continue;
+    for (const d of readdirSync(base)) {
       const m = d.match(RUN_RE);
-      if (!m) return null;
-      return { id: d, agent: m[2] as Agent, seed: Number(m[3]), startedAt: isoFromRunStamp(m[1]), summary: readJson<Summary>(join(LOGS, d, "summary.json")) };
-    })
-    .filter((r): r is RunInfo => !!r && !!r.summary)
-    .sort((a, b) => b.id.localeCompare(a.id));
+      if (!m || seen.has(d)) continue; // a local copy wins over the committed demo copy
+      const summary = readJson<Summary>(join(base, d, "summary.json"));
+      if (!summary) continue;
+      seen.add(d);
+      runs.push({ id: d, dir: join(base, d), demo: base === DEMO, agent: m[2] as Agent, seed: Number(m[3]), startedAt: isoFromRunStamp(m[1]), summary });
+    }
+  }
+  return runs.sort((a, b) => b.id.localeCompare(a.id));
 }
 
-// Any chaos run resets the databases, so only the newest run still matches them.
+// Any chaos run resets the databases, so only the newest local run still matches them.
 export function latestRunId(): string | null {
-  return listRuns()[0]?.id ?? null;
+  return listRuns().find((r) => !r.demo)?.id ?? null;
 }
 
 export interface ComparePair {
@@ -127,8 +137,9 @@ export interface ComparePair {
 export function pairFor(run: RunInfo): ComparePair {
   const runs = listRuns();
   const byId = new Map(runs.map((r) => [r.id, r]));
-  for (const d of readdirSync(LOGS).filter((x) => x.startsWith("compare-")).sort().reverse()) {
-    const c = readJson<{ rows: Array<{ baseline: { run_id: string }; dumen: { run_id: string } }> }>(join(LOGS, d, "compare.json"));
+  const compares = RUN_DIRS.filter(existsSync).flatMap((base) => readdirSync(base).filter((x) => x.startsWith("compare-")).map((x) => join(base, x)));
+  for (const d of compares.sort().reverse()) {
+    const c = readJson<{ rows: Array<{ baseline: { run_id: string }; dumen: { run_id: string } }> }>(join(d, "compare.json"));
     const row = c?.rows.find((r) => r.baseline.run_id === run.id || r.dumen.run_id === run.id);
     if (row) return { baseline: byId.get(row.baseline.run_id) ?? null, dumen: byId.get(row.dumen.run_id) ?? null, source: "compare" };
   }
@@ -186,7 +197,7 @@ export interface Escalation {
 export function loadRun(id: string): Run | null {
   const info = listRuns().find((r) => r.id === id);
   if (!info?.summary) return null;
-  const dir = join(LOGS, id);
+  const dir = info.dir;
   return {
     info,
     summary: info.summary,
@@ -404,7 +415,8 @@ export interface Lesson {
 }
 
 export function lessonsOf(runId: string): Lesson[] {
-  const ledger = readJsonl<any>(join(LOGS, runId, "memory.jsonl"));
+  const dir = listRuns().find((r) => r.id === runId)?.dir ?? join(LOGS, runId);
+  const ledger = readJsonl<any>(join(dir, "memory.jsonl"));
   const saved = readJson<Array<{ id: string; content: string; confidence: number }>>(join(ROOT, ".dumen", "memory", "long_term.json")) ?? [];
   const byId = new Map<string, Lesson>();
   const get = (id: string) => {
@@ -419,6 +431,10 @@ export function lessonsOf(runId: string): Lesson[] {
     const l = get(e.memoryId);
     if (e.action === "hydrate") {
       l.origin = "loaded";
+      if (e.details?.content) {
+        l.content = e.details.content;
+        l.confidence = e.details.confidence ?? null;
+      }
       const s = saved.find((m) => m.id === e.memoryId);
       if (s && !l.content) {
         l.content = s.content;

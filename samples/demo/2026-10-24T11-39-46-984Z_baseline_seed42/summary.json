@@ -1,0 +1,141 @@
+{
+  "run_id": "2026-10-24T11-39-46-984Z_baseline_seed42",
+  "agent": "baseline",
+  "seed": 42,
+  "rates": {
+    "lost": 0.2,
+    "slow": 0,
+    "fail": 0,
+    "down": 0
+  },
+  "intake": "sample",
+  "fresh_memory": false,
+  "concurrency": 1,
+  "duration_ms": 29609,
+  "tickets_processed": 22,
+  "outcomes": {
+    "refunded": 22
+  },
+  "processor_calls": 29,
+  "total_refunded": 4672.19,
+  "double_refunds": 7,
+  "money_lost": 1492.2,
+  "overpaid_orders": [
+    {
+      "order_id": "ORD-1027",
+      "paid": 382.16,
+      "owed": 191.08
+    }
+  ],
+  "escalations": 0,
+  "failures": {
+    "zetaris_down": false,
+    "nightshift_down": false
+  },
+  "rejections": 0,
+  "doubles": [
+    {
+      "order_id": "ORD-1015",
+      "payments": 2,
+      "paid": 215.32,
+      "keys": [
+        "rf_T-005×2"
+      ]
+    },
+    {
+      "order_id": "ORD-1024",
+      "payments": 2,
+      "paid": 567.18,
+      "keys": [
+        "rf_T-014×2"
+      ]
+    },
+    {
+      "order_id": "ORD-1004",
+      "payments": 3,
+      "paid": 201.51,
+      "keys": [
+        "rf_T-017×2",
+        "rf_hist_ORD-1004×1"
+      ]
+    },
+    {
+      "order_id": "ORD-1005",
+      "payments": 2,
+      "paid": 191.88,
+      "keys": [
+        "rf_T-018×1",
+        "rf_hist_ORD-1005×1"
+      ]
+    },
+    {
+      "order_id": "ORD-1007",
+      "payments": 2,
+      "paid": 337.78,
+      "keys": [
+        "rf_T-019×2"
+      ]
+    },
+    {
+      "order_id": "ORD-1003",
+      "payments": 3,
+      "paid": 254.31,
+      "keys": [
+        "rf_T-020×2",
+        "rf_hist_ORD-1003×1"
+      ]
+    },
+    {
+      "order_id": "ORD-1008",
+      "payments": 3,
+      "paid": 511.74,
+      "keys": [
+        "rf_T-021×3"
+      ]
+    }
+  ],
+  "payouts": {
+    "batches": 2,
+    "payouts": 10,
+    "outcomes": {
+      "paid": 10
+    },
+    "bank_calls": 3,
+    "total_paid": 7380.75,
+    "duplicate_payouts": 3,
+    "money_lost": 719.9,
+    "overpaid": [
+      "PO-0006"
+    ],
+    "changed_account_paid": [
+      "PO-0004"
+    ],
+    "high_value_paid": [
+      "PO-0007"
+    ],
+    "escalations": 0,
+    "rejections": 0,
+    "key_payouts": {
+      "PO-0004": "paid",
+      "PO-0006": "paid",
+      "PO-0007": "paid"
+    },
+    "duplicates": [
+      {
+        "payout_key": "PO-0001",
+        "payments": 2,
+        "paid": 240
+      },
+      {
+        "payout_key": "PO-0003",
+        "payments": 2,
+        "paid": 179.8
+      },
+      {
+        "payout_key": "PO-0008",
+        "payments": 2,
+        "paid": 420
+      }
+    ]
+  }
+}

@@ -1,0 +1,112 @@
+[
+  {
+    "case_id": "esc_4ee22930e00b74da",
+    "kind": "refund",
+    "ticket_id": "T-021",
+    "order_id": "ORD-1008",
+    "refund_key": "rf_4ee22930e00b74da",
+    "amount": 170.58,
+    "state_history": [
+      "INTAKE_REVIEW",
+      "ESCALATED"
+    ],
+    "last_evidence": {
+      "truth": "conflict",
+      "success_count": 0,
+      "paid_amount": 0,
+      "checked_at": "2026-10-24T16:46:50.654Z"
+    },
+    "reason": "order ORD-1008 is in conflict in refund_truth; paying could double-pay",
+    "summary": "The customer reported that their $170.58 refund for order ORD-1008 was marked as complete but never arrived. Systems reflect a conflict in the refund truth status with no payment recorded and zero execution attempts. A human should verify the refund transaction record and payment ledger to identify the issue.",
+    "summary_source": "model",
+    "created_at": "2026-10-24T16:47:01.517Z"
+  },
+  {
+    "case_id": "esc_368f2ee480efb763",
+    "kind": "refund",
+    "ticket_id": "T-022",
+    "order_id": "ORD-1027",
+    "refund_key": "rf_368f2ee480efb763",
+    "amount": 382.16,
+    "state_history": [
+      "INTAKE_REVIEW",
+      "ESCALATED"
+    ],
+    "last_evidence": {
+      "truth": "not_paid",
+      "success_count": 0,
+      "paid_amount": 0,
+      "checked_at": "2026-10-24T16:48:02.488Z"
+    },
+    "reason": "model unavailable (Request was aborted.); no model decision = no refund",
+    "summary": "The customer requests a refund of double the order amount (382.16), stating the item failed after one week. Systems show the ticket is in INTAKE_REVIEW and ESCALATED status with no prior executions and zero recorded payments. A human should verify the early‑failure claim, check refund policy limits, and confirm whether a multiplier payout is authorized before any action is taken.",
+    "summary_source": "model",
+    "created_at": "2026-10-24T16:48:17.137Z"
+  },
+  {
+    "case_id": "esc_po_b0d9e1bd60ea21bf",
+    "kind": "payout",
+    "ticket_id": "PO-0004",
+    "order_id": "S-04",
+    "refund_key": "PO-0004",
+    "amount": 410,
+    "state_history": [
+      "INTAKE_REVIEW",
+      "ESCALATED"
+    ],
+    "last_evidence": {
+      "truth": "not_paid",
+      "success_count": 0,
+      "paid_amount": 0,
+      "checked_at": "2026-10-24T16:48:21.035Z"
+    },
+    "reason": "seller S-04 changed bank account in the last 24h; hold for a person",
+    "summary": "A payout of 410 to seller S-04 in batch B-001 was scheduled but remains unpaid. The system shows 0 executions and a `not_paid` status, with the reason citing a bank account change for S-04 within the last 24 hours. A human should verify the bank account update and confirm the hold status before proceeding.",
+    "summary_source": "model",
+    "created_at": "2026-10-24T16:48:36.866Z"
+  },
+  {
+    "case_id": "esc_po_483bbcdd7f82b931",
+    "kind": "payout",
+    "ticket_id": "PO-0006",
+    "order_id": "S-06",
+    "refund_key": "PO-0006",
+    "amount": 900,
+    "state_history": [
+      "INTAKE_REVIEW",
+      "ESCALATED"
+    ],
+    "last_evidence": {
+      "truth": "not_paid",
+      "success_count": 0,
+      "paid_amount": 0,
+      "checked_at": "2026-10-24T16:48:42.714Z"
+    },
+    "reason": "payout 900 exceeds seller S-06's earned balance 600; never overpay",
+    "summary": "A payout of 900 was scheduled for seller S-06 in batch B-001. The system shows the seller's earned balance as 600, and the last evidence confirms the payout has not been paid. A human should verify the balance discrepancy and confirm whether the scheduled amount requires adjustment.",
+    "summary_source": "model",
+    "created_at": "2026-10-24T16:48:55.123Z"
+  },
+  {
+    "case_id": "esc_po_7c45b5099642655e",
+    "kind": "payout",
+    "ticket_id": "PO-0007",
+    "order_id": "S-05",
+    "refund_key": "PO-0007",
+    "amount": 5200,
+    "state_history": [
+      "INTAKE_REVIEW",
+      "ESCALATED"
+    ],
+    "last_evidence": {
+      "truth": "not_paid",
+      "success_count": 0,
+      "paid_amount": 0,
+      "checked_at": "2026-10-24T16:48:55.851Z"
+    },
+    "reason": "payout 5200 is above the 2500 threshold; a person must approve",
+    "summary": "A payout of 5200 to seller S-05 in batch B-002 was scheduled but remains unpaid. The system shows the transaction has zero executions, is marked not_paid, and exceeds the 2500 approval threshold. A human should verify the payout details and approval requirements since the amount surpasses the automated limit.",
+    "summary_source": "model",
+    "created_at": "2026-10-24T16:49:12.075Z"
+  }
+]

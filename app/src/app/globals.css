@@ -203,3 +203,7 @@ footer b { color: var(--ink); }
 .switch a { padding: 5px 14px; border-radius: 999px; color: var(--muted); font-weight: 700; font-size: 13px; }
 .switch a:hover { text-decoration: none; color: var(--ink); }
 .switch a.on { background: var(--sun); color: var(--ink); }
+
+/* ── Tagline ─────────────────────────────────────────────── */
+.tagline { margin: -10px 0 20px; font-size: 15px; color: var(--muted); }
+.tagline b { color: var(--ink); background: linear-gradient(transparent 60%, var(--sun) 60%); }

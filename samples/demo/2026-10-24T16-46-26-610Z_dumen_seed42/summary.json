@@ -1,0 +1,64 @@
+{
+  "run_id": "2026-10-24T16-46-26-610Z_dumen_seed42",
+  "agent": "dumen",
+  "seed": 42,
+  "rates": {
+    "lost": 0.2,
+    "slow": 0,
+    "fail": 0,
+    "down": 0
+  },
+  "intake": "live",
+  "fresh_memory": false,
+  "concurrency": 1,
+  "duration_ms": 185335,
+  "tickets_processed": 22,
+  "outcomes": {
+    "CONFIRMED": 17,
+    "REJECTED": 3,
+    "ESCALATED": 2
+  },
+  "processor_calls": 17,
+  "total_refunded": 2818.33,
+  "double_refunds": 0,
+  "money_lost": 0,
+  "overpaid_orders": [],
+  "escalations": 2,
+  "failures": {
+    "zetaris_down": false,
+    "nightshift_down": false
+  },
+  "rejections": 3,
+  "key_tickets": {
+    "T-017": "REJECTED",
+    "T-018": "REJECTED",
+    "T-020": "REJECTED",
+    "T-021": "ESCALATED",
+    "T-022": "ESCALATED"
+  },
+  "doubles": [],
+  "payouts": {
+    "batches": 2,
+    "payouts": 10,
+    "outcomes": {
+      "CONFIRMED": 5,
+      "REJECTED": 2,
+      "ESCALATED": 3
+    },
+    "bank_calls": 3,
+    "total_paid": 750.75,
+    "duplicate_payouts": 0,
+    "money_lost": 0,
+    "overpaid": [],
+    "changed_account_paid": [],
+    "high_value_paid": [],
+    "escalations": 3,
+    "rejections": 2,
+    "key_payouts": {
+      "PO-0004": "ESCALATED",
+      "PO-0006": "ESCALATED",
+      "PO-0007": "ESCALATED"
+    },
+    "duplicates": []
+  }
+}

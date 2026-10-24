@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { AgentAvatar, Crew } from "@/components/Agent";
+import { BeeMark } from "@/components/BeeMark";
 import { CompareButton } from "@/components/CompareButton";
 import { CountUp } from "@/components/CountUp";
 import { DecisionForm } from "@/components/DecisionForm";
@@ -13,7 +14,7 @@ const money = (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: 
 const runLabel = (r: RunInfo) => {
   const f = r.summary?.failures;
   const drill = f?.zetaris_down ? " · ⚠ Zetaris down" : f?.nightshift_down ? " · ⚠ Nightshift down" : "";
-  return `${r.agent} · seed ${r.seed} · lost ${r.summary?.rates.lost ?? "?"}${drill} · ${new Date(r.startedAt).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}`;
+  return `${r.demo ? "★ demo · " : ""}${r.agent} · seed ${r.seed} · lost ${r.summary?.rates.lost ?? "?"}${drill}${r.summary?.intake === "live" ? " · live Nemotron" : ""} · ${new Date(r.startedAt).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}`;
 };
 
 function Badge({ r }: { r: Refund }) {
@@ -102,15 +103,17 @@ function Side({ run, agent, kind }: { run: Run | null; agent: "baseline" | "dume
   );
 }
 
-// Open the trace where the contrast is sharpest: a ticket the other agent paid twice
-// that this agent handled with at least one processor call (a lost confirmation).
+// Open the trace where the contrast is sharpest: Dumen lost a confirmation, verified it
+// (UNKNOWN → VERIFYING → CONFIRMED) without calling again, and the baseline paid it twice.
 function pickDefault(refunds: Refund[], other: Refund[]): string | undefined {
   const twiceElsewhere = (r: Refund) => other.some((o) => o.ticketId === r.ticketId && o.paidTwice);
+  const savedByVerify = (r: Refund) => r.verified && r.calls === 1 && r.state === "CONFIRMED";
   return (
+    refunds.find((r) => savedByVerify(r) && twiceElsewhere(r)) ??
     refunds.find((r) => twiceElsewhere(r) && r.verified) ??
+    refunds.find((r) => savedByVerify(r)) ??
     refunds.find((r) => twiceElsewhere(r) && r.calls > 0) ??
     refunds.find((r) => r.paidTwice) ??
-    refunds.find((r) => twiceElsewhere(r)) ??
     refunds.find((r) => r.retried) ??
     refunds[0]
   )?.key;
@@ -124,7 +127,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ r
       <main className="shell">
         <div className="empty">
           <div className="logo" aria-hidden>
-            🧾
+            <BeeMark size={52} />
           </div>
           <h2 style={{ margin: "0 0 6px", fontSize: 26 }}>No runs yet.</h2>
           <p className="hint">Nothing to show until a run happens. Create one from the repo folder:</p>
@@ -139,8 +142,12 @@ npm run compare`}</pre>
   // Open on the newest Dumen run that had lost confirmations: that's where the story is.
   // Outage drills are opened from the picker, not by default.
   const drill = (r: RunInfo) => !!(r.summary?.failures?.zetaris_down || r.summary?.failures?.nightshift_down);
+  // Open on the newest Dumen run that covers refunds and payouts (not an outage drill).
   const defaultRun =
-    runs.find((r) => r.agent === "dumen" && !drill(r) && (r.summary?.rates.lost ?? 0) > 0) ?? runs.find((r) => r.agent === "dumen") ?? runs[0];
+    runs.find((r) => r.agent === "dumen" && !drill(r) && !!r.summary?.payouts) ??
+    runs.find((r) => r.agent === "dumen" && !drill(r)) ??
+    runs.find((r) => r.agent === "dumen") ??
+    runs[0];
   const run = loadRun(sp.run ?? defaultRun.id) ?? loadRun(defaultRun.id)!;
   const pair = pairFor(run.info);
   const baseline = pair.baseline ? loadRun(pair.baseline.id) : null;
@@ -164,17 +171,20 @@ npm run compare`}</pre>
       <div className="topbar">
         <div className="brand">
           <span className="logo" aria-hidden>
-            🧾
+            <BeeMark size={30} />
           </span>
           <div>
             Dumen
-            <small>refund control room</small>
+            <small>refund &amp; payout control room</small>
           </div>
         </div>
         <RunPicker runs={runs.map((r) => ({ id: r.id, label: runLabel(r) }))} current={run.info.id} />
         <div className="spacer" />
-        <CompareButton defaultSeed={s.seed} defaultLost={s.rates.lost} />
+        <CompareButton key={run.info.id} defaultSeed={s.seed} defaultLost={s.rates.lost} />
       </div>
+      <p className="tagline">
+        Refund and payout agents remember what they did, not whether it worked. <b>Dumen checks before it pays.</b>
+      </p>
 
       {s.failures?.zetaris_down && (
         <div className="banner bad">

@@ -6,7 +6,7 @@ const display = Space_Grotesk({ subsets: ["latin"], variable: "--font-display", 
 const mono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-mono", weight: ["400", "600", "700"] });
 
 export const metadata: Metadata = {
-  title: "Dumen · Refund control room",
+  title: "Dumen · Refund & payout control room",
   description: "What Dumen stopped, why, and what needs your attention.",
 };
 

@@ -38,7 +38,8 @@ export class MemoryStoreService {
     for (const m of saved) {
       if (this.records.has(m.id)) continue;
       this.records.set(m.id, { ...m, layer: "long_term" });
-      this.ledger.record({ memoryId: m.id, action: "hydrate", actor: "MemoryStoreService", details: { from: this.longTermPath } });
+      // Record what was loaded, so a run's ledger alone shows the lesson (no need for the store file).
+      this.ledger.record({ memoryId: m.id, action: "hydrate", actor: "MemoryStoreService", details: { from: this.longTermPath, content: m.content, confidence: m.confidence, runId: m.runId } });
     }
     return saved.length;
   }
