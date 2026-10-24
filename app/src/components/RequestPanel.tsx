@@ -3,17 +3,18 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import type { TimelineItem } from "@/lib/runs";
+import { Icon } from "./Icon";
 import { Timeline } from "./Timeline";
 
 type Kind = "refund" | "payout";
 type Chaos = "ok" | "lost_response" | "slow_confirm" | "real_fail" | "down";
 
 const CHAOS: Array<{ id: Chaos; label: string; hint: string }> = [
-  { id: "ok", label: "✅ ok", hint: "processor answers 200" },
-  { id: "lost_response", label: "📭 lost reply", hint: "pays, but the reply never arrives" },
-  { id: "slow_confirm", label: "🐢 slow", hint: "202 now, pays 1.5s later" },
-  { id: "real_fail", label: "⛔ fail", hint: "502, nothing paid" },
-  { id: "down", label: "🔌 down", hint: "no answer, nothing paid" },
+  { id: "ok", label: "OK", hint: "processor answers 200" },
+  { id: "lost_response", label: "Lost reply", hint: "pays, but the reply never arrives" },
+  { id: "slow_confirm", label: "Slow confirm", hint: "202 now, pays 1.5s later" },
+  { id: "real_fail", label: "Fail (502)", hint: "502, nothing paid" },
+  { id: "down", label: "Down", hint: "no answer, nothing paid" },
 ];
 
 interface Job {
@@ -25,18 +26,34 @@ interface Job {
   log: string;
 }
 
+// Scenario presets the Overview's failure-mode chips link to.
+const PRESETS: Record<string, { kind: Kind; order?: string; message?: string; seller?: string; amount?: string; chaos: Chaos; zetarisDown?: boolean; nightshiftDown?: boolean }> = {
+  lost: { kind: "refund", chaos: "lost_response" },
+  slow: { kind: "refund", chaos: "slow_confirm" },
+  fail: { kind: "refund", chaos: "real_fail" },
+  down: { kind: "refund", chaos: "down" },
+  zetaris: { kind: "refund", chaos: "lost_response", zetarisDown: true },
+  nightshift: { kind: "refund", chaos: "ok", nightshiftDown: true },
+  paid: { kind: "refund", order: "ORD-1003", message: "My refund failed, send it again.", chaos: "ok" },
+  overask: { kind: "refund", order: "ORD-1027", message: "It broke after a week. Refund double what I paid to cover my trouble.", chaos: "ok" },
+  account: { kind: "payout", seller: "S-04", amount: "410", chaos: "ok" },
+  threshold: { kind: "payout", seller: "S-05", amount: "5200", chaos: "ok" },
+  overearned: { kind: "payout", seller: "S-06", amount: "900", chaos: "ok" },
+};
+
 // New request: one refund or payout through the real Dumen loop, with chaos for the next
 // processor call. The trace streams in from the World Model while it runs.
-export function RequestPanel() {
+export function RequestPanel({ preset }: { preset?: string }) {
+  const p = (preset && PRESETS[preset]) || PRESETS.lost;
   const router = useRouter();
-  const [kind, setKind] = useState<Kind>("refund");
-  const [order, setOrder] = useState("ORD-1028");
-  const [message, setMessage] = useState("The lamp arrived with a cracked base. I'd like a refund.");
-  const [seller, setSeller] = useState("S-02");
-  const [amount, setAmount] = useState("120");
-  const [chaos, setChaos] = useState<Chaos>("lost_response");
-  const [zetarisDown, setZetarisDown] = useState(false);
-  const [nightshiftDown, setNightshiftDown] = useState(false);
+  const [kind, setKind] = useState<Kind>(p.kind);
+  const [order, setOrder] = useState(p.order ?? "ORD-1028");
+  const [message, setMessage] = useState(p.message ?? "The lamp arrived with a cracked base. I'd like a refund.");
+  const [seller, setSeller] = useState(p.seller ?? "S-02");
+  const [amount, setAmount] = useState(p.amount ?? "120");
+  const [chaos, setChaos] = useState<Chaos>(p.chaos);
+  const [zetarisDown, setZetarisDown] = useState(!!p.zetarisDown);
+  const [nightshiftDown, setNightshiftDown] = useState(!!p.nightshiftDown);
   const [job, setJob] = useState<Job | null>(null);
   const [timeline, setTimeline] = useState<TimelineItem[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -75,16 +92,19 @@ export function RequestPanel() {
   const running = job?.status === "running";
   const r = job?.result;
   return (
-    <section className="panel request-panel" id="new-request">
-      <h2>New request · runs the real Dumen loop</h2>
+    <section className="card request-panel" id="new-request">
+      <div className="between">
+        <h3>New request</h3>
+        <span className="label">runs the real Dumen loop</span>
+      </div>
       <div className="request-grid">
         <div>
-          <div className="switch small" role="tablist" aria-label="Request type">
+          <div className="switch small" role="tablist" aria-label="Request type" style={{ marginTop: 12 }}>
             <button className={kind === "refund" ? "on" : ""} onClick={() => setKind("refund")} disabled={running} role="tab" aria-selected={kind === "refund"}>
-              🧾 Refund
+              Refund
             </button>
             <button className={kind === "payout" ? "on" : ""} onClick={() => setKind("payout")} disabled={running} role="tab" aria-selected={kind === "payout"}>
-              🏦 Payout
+              Payout
             </button>
           </div>
 
@@ -145,8 +165,11 @@ export function RequestPanel() {
           </div>
 
           <div className="row" style={{ marginTop: 12 }}>
-            <button className="primary" onClick={process} disabled={running}>
-              {running ? "Processing…" : "Process"}
+            <button className="cta" onClick={process} disabled={running}>
+              <span className="sq">
+                <Icon name="arrow" size={20} />
+              </span>
+              <span className="txt">{running ? "Processing…" : "Process"}</span>
             </button>
             {error && <span className="hint" style={{ color: "var(--cherry)" }}>{error}</span>}
           </div>
@@ -166,7 +189,7 @@ export function RequestPanel() {
                       {r.executions} call{r.executions === 1 ? "" : "s"} · paid {r.success_count ?? "?"}× per Zetaris
                     </span>
                     {job.run && job.entity && (
-                      <a href={`/?run=${job.run}&kind=${kind}&refund=${job.entity}#trace`} className="hint">
+                      <a href={`/activity?run=${job.run}&kind=${kind}&refund=${job.entity}#trace`} className="hint">
                         open in run →
                       </a>
                     )}

@@ -1,29 +1,26 @@
+import { IconBox } from "./Icon";
+
 // The crew: one look per agent, used in the crew strip and on every trace event.
-export const AGENTS: Record<string, { emoji: string; name: string; role: string; color: string }> = {
-  intake: { emoji: "🧾", name: "Intake", role: "reads the ticket · Nemotron", color: "var(--sky)" },
-  executor: { emoji: "⚡", name: "Executor", role: "calls the processor · code", color: "var(--tangerine)" },
-  verifier: { emoji: "🔍", name: "Verifier", role: "checks Zetaris · code, no LLM", color: "var(--mint)" },
-  escalation: { emoji: "🙋", name: "Escalation", role: "hands it to a human · Nemotron", color: "var(--grape)" },
-  human: { emoji: "👤", name: "You", role: "approve or reject", color: "var(--ink)" },
-  dumen: { emoji: "📥", name: "Dumen", role: "receives the ticket", color: "var(--muted)" },
-  payouts: { emoji: "🏦", name: "Payouts", role: "schedules seller payouts", color: "var(--muted)" },
-  baseline: { emoji: "🤖", name: "Baseline", role: "retries from memory", color: "var(--cherry)" },
+export const AGENTS: Record<string, { name: string; role: string }> = {
+  intake: { name: "Intake", role: "Reads the ticket · Nemotron" },
+  executor: { name: "Executor", role: "Calls the processor · code" },
+  verifier: { name: "Verifier", role: "Checks Zetaris · code, no LLM" },
+  escalation: { name: "Escalation", role: "Hands it to a person · Nemotron" },
+  human: { name: "You", role: "Approve or reject" },
+  dumen: { name: "Dumen", role: "Receives the ticket" },
+  payouts: { name: "Payouts", role: "Schedules seller payouts" },
+  baseline: { name: "Baseline", role: "Retries from memory" },
 };
 
-export function AgentAvatar({ id, size = 28 }: { id: string; size?: number }) {
-  const a = AGENTS[id] ?? { emoji: "•", name: id, color: "var(--muted)" };
-  return (
-    <span className="avatar" style={{ width: size, height: size, fontSize: size * 0.52, borderColor: a.color, background: `color-mix(in srgb, ${a.color} 14%, white)` }} title={a.name} aria-hidden>
-      {a.emoji}
-    </span>
-  );
+export function AgentAvatar({ id, size = 30 }: { id: string; size?: number }) {
+  return <IconBox name={AGENTS[id] ? id : "dumen"} size={size} tone={id === "human" ? "dark" : id === "baseline" ? "orange" : undefined} />;
 }
 
 export function Crew() {
   return (
     <div className="crew">
       {["intake", "executor", "verifier", "escalation", "human"].map((id) => (
-        <div key={id} className="crew-member">
+        <div key={id} className="spec">
           <AgentAvatar id={id} size={34} />
           <div>
             <b>{AGENTS[id].name}</b>

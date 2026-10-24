@@ -20,7 +20,7 @@ function Evidence({ e }: { e: NonNullable<TimelineItem["evidence"]> }) {
   if (e.response) parts.push(`response:\n${JSON.stringify(e.response, null, 2)}`);
   if (e.note) parts.push(`note: ${e.note}`);
   if (!parts.length) return null;
-  const label = e.query ? "🔎 Zetaris evidence" : e.response ? "processor / step detail" : "detail";
+  const label = e.query ? "Zetaris evidence" : e.response ? "processor / step detail" : "detail";
   return (
     <details>
       <summary>{label}</summary>

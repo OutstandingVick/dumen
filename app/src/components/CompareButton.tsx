@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { Icon } from "./Icon";
 
 interface Job {
   id: string;
@@ -80,8 +81,11 @@ export function CompareButton({ defaultSeed, defaultLost }: { defaultSeed: numbe
             Live (Nemotron)
           </button>
         </div>
-        <button className="primary" onClick={start} disabled={running}>
-          {running ? "Running…" : "Run comparison"}
+        <button className="cta" onClick={start} disabled={running}>
+          <span className="sq">
+            <Icon name="activity" size={20} />
+          </span>
+          <span className="txt">{running ? "Running…" : "Run comparison"}</span>
         </button>
         {job?.status === "failed" && <span className="hint" style={{ color: "var(--cherry)" }}>comparison failed: {job.log.trim().split("\n").slice(-2).join(" ")}</span>}
         {error && !running && <span className="hint" style={{ color: "var(--cherry)" }}>{error}</span>}
