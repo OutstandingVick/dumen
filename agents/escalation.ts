@@ -11,6 +11,7 @@ export const AGENT = "escalation";
 
 export interface EscalationCase {
   case_id: string;
+  kind: "refund" | "payout";
   ticket_id: string;
   order_id: string;
   refund_key: string;
@@ -23,8 +24,8 @@ export interface EscalationCase {
   created_at: string;
 }
 
-const SYSTEM_PROMPT = `You write escalation notes for a refund operations team.
-Given the evidence, write 2-3 plain sentences: what the customer asked, what the systems show, and what a human should check.
+const SYSTEM_PROMPT = `You write escalation notes for a payments operations team (customer refunds and seller payouts).
+Given the evidence, write 2-3 plain sentences: what was asked or scheduled, what the systems show, and what a human should check.
 Do not recommend paying. No preamble.`;
 
 // Serialize writes to the queue file across concurrent tickets.
@@ -53,15 +54,19 @@ export async function escalate(entityId: string, deps: { world: World; trace: Tr
   } catch {
     summary_source = "template";
     const ev = e.lastEvidence;
-    summary = `Ticket ${e.ticketId} asks about a refund on ${e.orderId}. ${reason}.${ev ? ` refund_truth shows truth=${ev.truth}, ${ev.success_count} processor payment(s) totalling ${ev.paid_amount}.` : ""} Nothing was paid by Dumen after escalation; a human should reconcile the order before any refund.`;
+    summary =
+      e.kind === "payout"
+        ? `Payout ${e.ticketId} of ${e.amount} to seller ${e.orderId} (batch ${e.batchId}). ${reason}.${ev ? ` payout_truth shows truth=${ev.truth}, ${ev.success_count} bank payment(s) totalling ${ev.paid_amount}.` : ""} Nothing was sent by Dumen; a person should approve or reject this payout.`
+        : `Ticket ${e.ticketId} asks about a refund on ${e.orderId}. ${reason}.${ev ? ` refund_truth shows truth=${ev.truth}, ${ev.success_count} processor payment(s) totalling ${ev.paid_amount}.` : ""} Nothing was paid by Dumen after escalation; a human should reconcile the order before any refund.`;
   }
   if (process.env.SAMPLE_MODE === "true" && summary === "sample mode response") {
     summary_source = "template";
-    summary = `Ticket ${e.ticketId} on ${e.orderId}: ${reason}. A human should reconcile before any refund.`;
+    summary = `${e.kind === "payout" ? "Payout" : "Ticket"} ${e.ticketId} on ${e.orderId}: ${reason}. A person should decide before any money moves.`;
   }
 
   const item: EscalationCase = {
-    case_id: `esc_${e.id.slice("ent_refund_".length)}`,
+    case_id: `esc_${e.id.replace(/^ent_(refund|payout)_/, e.kind === "payout" ? "po_" : "")}`,
+    kind: e.kind,
     ticket_id: e.ticketId,
     order_id: e.orderId,
     refund_key: e.refundKey,

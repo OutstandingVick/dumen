@@ -107,3 +107,47 @@ export async function getOrderRefundTruth(orderId: string): Promise<RefundTruth[
 export async function getAllRefundTruth(): Promise<RefundTruth[]> {
   return (await query("SELECT * FROM dumen.refund_truth ORDER BY refund_key")).map(toTruth);
 }
+
+// ── Payouts ───────────────────────────────────────────────────────────────
+
+export interface PayoutTruth {
+  payout_key: string;
+  seller_id: string | null;
+  batch_id: string | null;
+  amount: number;
+  internal_status: string | null;
+  bank_status: string | null;
+  success_count: number;
+  paid_amount: number;
+  earned_balance: number;
+  account_changed_recently: boolean;
+  truth: Truth;
+}
+
+function toPayoutTruth(r: Record<string, string>): PayoutTruth {
+  const num = (v: unknown) => (v === null || v === undefined || v === "null" ? 0 : Number(v));
+  const str = (v: unknown) => (v === null || v === undefined || v === "null" ? null : String(v));
+  return {
+    payout_key: String(r.payout_key),
+    seller_id: str(r.seller_id),
+    batch_id: str(r.batch_id),
+    amount: num(r.amount),
+    internal_status: str(r.internal_status),
+    bank_status: str(r.bank_status),
+    success_count: num(r.success_count),
+    paid_amount: num(r.paid_amount),
+    earned_balance: num(r.earned_balance),
+    account_changed_recently: String(r.account_changed_recently) === "true",
+    truth: r.truth as Truth,
+  };
+}
+
+export async function getPayoutTruth(payoutKey: string): Promise<PayoutTruth | null> {
+  if (!/^[A-Za-z0-9_.:-]+$/.test(payoutKey)) throw new Error(`invalid payout_key: ${payoutKey}`);
+  const rows = await query(`SELECT * FROM dumen.payout_truth WHERE payout_key = '${payoutKey}'`);
+  return rows.length ? toPayoutTruth(rows[0]) : null;
+}
+
+export async function getAllPayoutTruth(): Promise<PayoutTruth[]> {
+  return (await query("SELECT * FROM dumen.payout_truth ORDER BY payout_key")).map(toPayoutTruth);
+}

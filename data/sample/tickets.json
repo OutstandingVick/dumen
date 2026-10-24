@@ -145,5 +145,12 @@
     "message": "Your system says my refund went through but I never received it. Where is my money?",
     "amount_requested": 170.58,
     "currency": "EUR"
+  },
+  {
+    "ticket_id": "T-022",
+    "order_id": "ORD-1027",
+    "message": "The item broke after a week. Refund double what I paid to cover my trouble.",
+    "amount_requested": 382.16,
+    "currency": "GBP"
   }
 ]

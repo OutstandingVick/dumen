@@ -98,6 +98,47 @@ tickets.push({
   currency: conflicted.currency,
 });
 
+// T-022 asks for more than the order was worth: a confident-and-wrong request.
+const overAsk = orders[26];
+tickets.push({
+  ticket_id: "T-022",
+  order_id: overAsk.order_id,
+  message: "The item broke after a week. Refund double what I paid to cover my trouble.",
+  amount_requested: Math.round(overAsk.amount * 2 * 100) / 100,
+  currency: overAsk.currency,
+});
+
+// Payouts: a marketplace paying its sellers. Fixed values (no PRNG), so refund data above is unchanged.
+const now = Date.now();
+const LONG_AGO = "2026-09-01T09:00:00Z";
+interface Seller { seller_id: string; name: string; bank_account: string; bank_account_changed_at: string; earned_balance: number }
+const sellers: Seller[] = [
+  { seller_id: "S-01", name: "Okafor Ceramics", bank_account: "NL91 **** 4300", bank_account_changed_at: LONG_AGO, earned_balance: 1000 },
+  { seller_id: "S-02", name: "Lindqvist Prints", bank_account: "SE45 **** 1182", bank_account_changed_at: LONG_AGO, earned_balance: 800 },
+  { seller_id: "S-03", name: "Tanaka Tea Co", bank_account: "GB29 **** 6819", bank_account_changed_at: LONG_AGO, earned_balance: 500 },
+  // Bank account changed 3 hours before the run: a classic payout-fraud signal.
+  { seller_id: "S-04", name: "Mensah Leather", bank_account: "DE89 **** 3000", bank_account_changed_at: new Date(now - 3 * 3600_000).toISOString(), earned_balance: 2000 },
+  { seller_id: "S-05", name: "Rossi Furniture", bank_account: "IT60 **** 0123", bank_account_changed_at: LONG_AGO, earned_balance: 8000 },
+  { seller_id: "S-06", name: "Haddad Spices", bank_account: "FR14 **** 0189", bank_account_changed_at: LONG_AGO, earned_balance: 600 },
+];
+interface Payout { payout_key: string; seller_id: string; amount: number; batch_id: string; internal_status: string }
+const payouts: Payout[] = [
+  { payout_key: "PO-0001", seller_id: "S-01", amount: 120.0, batch_id: "B-001", internal_status: "pending" },
+  { payout_key: "PO-0002", seller_id: "S-02", amount: 340.5, batch_id: "B-001", internal_status: "pending" },
+  { payout_key: "PO-0003", seller_id: "S-03", amount: 89.9, batch_id: "B-001", internal_status: "pending" }, // already paid at the bank
+  { payout_key: "PO-0004", seller_id: "S-04", amount: 410.0, batch_id: "B-001", internal_status: "pending" }, // account changed 3h ago
+  { payout_key: "PO-0005", seller_id: "S-01", amount: 75.25, batch_id: "B-001", internal_status: "pending" },
+  { payout_key: "PO-0006", seller_id: "S-06", amount: 900.0, batch_id: "B-001", internal_status: "pending" }, // more than S-06 earned (600)
+  { payout_key: "PO-0007", seller_id: "S-05", amount: 5200.0, batch_id: "B-002", internal_status: "pending" }, // above the 2,500 threshold
+  { payout_key: "PO-0008", seller_id: "S-02", amount: 210.0, batch_id: "B-002", internal_status: "pending" }, // already paid at the bank
+  { payout_key: "PO-0009", seller_id: "S-03", amount: 155.0, batch_id: "B-002", internal_status: "pending" },
+  { payout_key: "PO-0010", seller_id: "S-06", amount: 60.0, batch_id: "B-002", internal_status: "pending" },
+];
+const bankLog = [
+  { payout_key: "PO-0003", bank_status: "succeeded", amount: 89.9, executed_at: at(300) },
+  { payout_key: "PO-0008", bank_status: "succeeded", amount: 210.0, executed_at: at(305) },
+];
+
 async function withClient(url: string, fn: (c: pg.Client) => Promise<void>) {
   const c = new pg.Client({ connectionString: url, connectionTimeoutMillis: 10_000, statement_timeout: 10_000 });
   await c.connect();
@@ -109,10 +150,16 @@ await withClient(ORDERS_URL, async (c) => {
     CREATE TABLE IF NOT EXISTS orders (order_id text PRIMARY KEY, customer text NOT NULL, amount numeric(10,2) NOT NULL, currency text NOT NULL, status text NOT NULL);
     CREATE TABLE IF NOT EXISTS refunds (refund_key text PRIMARY KEY, order_id text NOT NULL REFERENCES orders, amount numeric(10,2) NOT NULL,
                           internal_status text NOT NULL CHECK (internal_status IN ('pending','succeeded','failed')), requested_at timestamptz NOT NULL);
+    CREATE TABLE IF NOT EXISTS sellers (seller_id text PRIMARY KEY, name text NOT NULL, bank_account text NOT NULL,
+                          bank_account_changed_at timestamptz NOT NULL, earned_balance numeric(10,2) NOT NULL);
+    CREATE TABLE IF NOT EXISTS payouts (payout_key text PRIMARY KEY, seller_id text NOT NULL REFERENCES sellers, amount numeric(10,2) NOT NULL,
+                          batch_id text NOT NULL, internal_status text NOT NULL CHECK (internal_status IN ('pending','succeeded','failed')));
     -- Full reset, but keep the tables themselves: Zetaris has them registered.
-    TRUNCATE refunds, orders RESTART IDENTITY;`);
+    TRUNCATE refunds, orders, payouts, sellers RESTART IDENTITY;`);
   for (const o of orders) await c.query("INSERT INTO orders VALUES ($1,$2,$3,$4,$5)", [o.order_id, o.customer, o.amount, o.currency, o.status]);
   for (const r of refunds) await c.query("INSERT INTO refunds VALUES ($1,$2,$3,$4,$5)", [r.refund_key, r.order_id, r.amount, r.internal_status, r.requested_at]);
+  for (const x of sellers) await c.query("INSERT INTO sellers VALUES ($1,$2,$3,$4,$5)", [x.seller_id, x.name, x.bank_account, x.bank_account_changed_at, x.earned_balance]);
+  for (const p of payouts) await c.query("INSERT INTO payouts VALUES ($1,$2,$3,$4,$5)", [p.payout_key, p.seller_id, p.amount, p.batch_id, p.internal_status]);
 });
 
 await withClient(PROCESSOR_URL, async (c) => {
@@ -121,10 +168,15 @@ await withClient(PROCESSOR_URL, async (c) => {
     CREATE TABLE IF NOT EXISTS processor_log (id serial PRIMARY KEY, refund_key text NOT NULL,
                                 processor_status text NOT NULL CHECK (processor_status IN ('succeeded','failed')),
                                 amount numeric(10,2) NOT NULL, processed_at timestamptz NOT NULL);
-    TRUNCATE processor_log RESTART IDENTITY;`);
+    -- Source B, second rail: what the bank actually paid out. No unique key either.
+    CREATE TABLE IF NOT EXISTS bank_rail_log (id serial PRIMARY KEY, payout_key text NOT NULL,
+                                bank_status text NOT NULL CHECK (bank_status IN ('succeeded','failed')),
+                                amount numeric(10,2) NOT NULL, executed_at timestamptz NOT NULL);
+    TRUNCATE processor_log, bank_rail_log RESTART IDENTITY;`);
   for (const p of processorLog) await c.query("INSERT INTO processor_log (refund_key, processor_status, amount, processed_at) VALUES ($1,$2,$3,$4)", [p.refund_key, p.processor_status, p.amount, p.processed_at]);
+  for (const b of bankLog) await c.query("INSERT INTO bank_rail_log (payout_key, bank_status, amount, executed_at) VALUES ($1,$2,$3,$4)", [b.payout_key, b.bank_status, b.amount, b.executed_at]);
 });
 
 writeFileSync(new URL("../data/sample/tickets.json", import.meta.url), JSON.stringify(tickets, null, 2) + "\n");
 
-console.log(`orders: ${orders.length}, internal refunds: ${refunds.length}, processor rows: ${processorLog.length}, tickets: ${tickets.length}`);
+console.log(`orders: ${orders.length}, internal refunds: ${refunds.length}, processor rows: ${processorLog.length}, tickets: ${tickets.length}, sellers: ${sellers.length}, payouts: ${payouts.length}, bank rows: ${bankLog.length}`);

@@ -18,7 +18,8 @@
     "compare": "tsx scripts/compare.ts",
     "zetaris:setup": "tsx scripts/zetaris-setup.ts",
     "dashboard": "npm --prefix app install --silent && npm --prefix app run dev",
-    "failure:check": "tsx scripts/failure-check.ts"
+    "failure:check": "tsx scripts/failure-check.ts",
+    "payouts:check": "tsx scripts/payouts-check.ts"
   },
   "license": "MIT",
   "dependencies": {

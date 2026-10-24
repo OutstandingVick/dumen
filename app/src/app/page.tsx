@@ -5,7 +5,7 @@ import { CountUp } from "@/components/CountUp";
 import { DecisionForm } from "@/components/DecisionForm";
 import { RunPicker } from "@/components/RunPicker";
 import { Timeline } from "@/components/Timeline";
-import { latestRunId, lessonsOf, listRuns, loadRun, pairFor, refundsOf, timelineOf, type Refund, type Run, type RunInfo } from "@/lib/runs";
+import { latestRunId, lessonsOf, listRuns, loadRun, pairFor, refundsOf, timelineOf, type Kind, type Refund, type Run, type RunInfo } from "@/lib/runs";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +19,7 @@ const runLabel = (r: RunInfo) => {
 function Badge({ r }: { r: Refund }) {
   const badges: Array<[string, string]> = [];
   if (r.paidTwice) badges.push(["b-twice", "paid twice"]);
+  else if (r.state === "PAID_RISKY") badges.push(["b-twice", "paid without a check"]);
   else if (r.state === "CONFIRMED" || r.state === "PAID") badges.push(["b-confirmed", "confirmed"]);
   else if (r.state === "REJECTED" || r.state === "DECLINED") badges.push(["b-rejected", "rejected"]);
   else if (r.state === "ESCALATED") badges.push(["b-escalated", "escalated"]);
@@ -36,7 +37,10 @@ function Badge({ r }: { r: Refund }) {
   );
 }
 
-function Side({ run, agent }: { run: Run | null; agent: "baseline" | "dumen" }) {
+// Risky = sent without the check it needed: changed bank account, unapproved high value, or above earned.
+const riskyPayouts = (p: NonNullable<Run["summary"]["payouts"]>) => p.changed_account_paid.length + p.high_value_paid.length + p.overpaid.length;
+
+function Side({ run, agent, kind }: { run: Run | null; agent: "baseline" | "dumen"; kind: Kind }) {
   if (!run) {
     return (
       <div className={`side ${agent}`}>
@@ -46,7 +50,19 @@ function Side({ run, agent }: { run: Run | null; agent: "baseline" | "dumen" }) 
     );
   }
   const s = run.summary;
-  const lostBad = s.money_lost > 0;
+  const p = s.payouts;
+  if (kind === "payout" && !p) {
+    return (
+      <div className={`side ${agent}`}>
+        <div className="who">{agent === "dumen" ? "Dumen" : "Baseline agent"}</div>
+        <p className="hint">This run has no payouts (it predates them or ran with --no-payouts).</p>
+      </div>
+    );
+  }
+  const lost = kind === "payout" ? p!.money_lost : s.money_lost;
+  const lostBad = lost > 0;
+  const dupes = kind === "payout" ? p!.duplicate_payouts : s.double_refunds;
+  const risky = kind === "payout" ? riskyPayouts(p!) : (s.overpaid_orders?.length ?? 0);
   return (
     <div className={`side ${agent}`}>
       <div className="who">
@@ -54,32 +70,32 @@ function Side({ run, agent }: { run: Run | null; agent: "baseline" | "dumen" }) 
           <AgentAvatar id={agent === "dumen" ? "verifier" : "baseline"} size={30} />
           {agent === "dumen" ? "Dumen" : "Baseline agent · retries from memory"}
         </span>
-        <Link href={`/?run=${run.info.id}`} className="hint">
+        <Link href={`/?run=${run.info.id}&kind=${kind}`} className="hint">
           open run →
         </Link>
       </div>
       <div className="receipt-line" />
-      <div className="hint">money paid out twice</div>
+      <div className="hint">money paid out that wasn't owed</div>
       <div className={`money ${lostBad ? "bad" : "good"}`}>
-        <CountUp value={s.money_lost} />
+        <CountUp value={lost} />
       </div>
-      <div className={`stamp ${lostBad ? "bad" : "good"}`}>{lostBad ? `PAID ×2 · ${s.double_refunds}` : "VERIFIED ✓"}</div>
+      <div className={`stamp ${lostBad ? "bad" : "good"}`}>{lostBad ? (dupes ? `PAID ×2 · ${dupes}` : "OVERPAID") : "VERIFIED ✓"}</div>
       <div className="stats">
-        <div className={`stat ${s.double_refunds ? "bad" : "good"}`}>
-          <b>{s.double_refunds}</b>
-          <span>double refunds</span>
+        <div className={`stat ${dupes ? "bad" : "good"}`}>
+          <b>{dupes}</b>
+          <span>{kind === "payout" ? "duplicate payouts" : "double refunds"}</span>
+        </div>
+        <div className={`stat ${risky ? "bad" : "good"}`}>
+          <b>{risky}</b>
+          <span>{kind === "payout" ? "risky payouts sent" : "overpaid orders"}</span>
         </div>
         <div className="stat">
-          <b>{s.processor_calls}</b>
-          <span>processor calls</span>
-        </div>
-        <div className="stat">
-          <b>{s.escalations ?? 0}</b>
+          <b>{kind === "payout" ? p!.escalations : (s.escalations ?? 0)}</b>
           <span>escalations</span>
         </div>
         <div className="stat">
-          <b>{s.rejections ?? 0}</b>
-          <span>rejections</span>
+          <b>{kind === "payout" ? p!.bank_calls : s.processor_calls}</b>
+          <span>{kind === "payout" ? "bank calls" : "processor calls"}</span>
         </div>
       </div>
     </div>
@@ -100,7 +116,7 @@ function pickDefault(refunds: Refund[], other: Refund[]): string | undefined {
   )?.key;
 }
 
-export default async function Page({ searchParams }: { searchParams: Promise<{ run?: string; refund?: string }> }) {
+export default async function Page({ searchParams }: { searchParams: Promise<{ run?: string; refund?: string; kind?: string }> }) {
   const sp = await searchParams;
   const runs = listRuns();
   if (!runs.length) {
@@ -131,8 +147,9 @@ npm run compare`}</pre>
   const dumen = pair.dumen ? loadRun(pair.dumen.id) : null;
   const other = run.info.agent === "dumen" ? baseline : dumen;
 
-  const refunds = refundsOf(run);
-  const otherRefunds = other ? refundsOf(other) : [];
+  const kind: Kind = sp.kind === "payout" ? "payout" : "refund";
+  const refunds = refundsOf(run, kind);
+  const otherRefunds = other ? refundsOf(other, kind) : [];
   const selectedKey = sp.refund && refunds.some((r) => r.key === sp.refund) ? sp.refund : pickDefault(refunds, otherRefunds);
   const selected = refunds.find((r) => r.key === selectedKey);
   const counterpart = selected ? otherRefunds.find((r) => r.ticketId === selected.ticketId) : undefined;
@@ -177,17 +194,37 @@ npm run compare`}</pre>
         <div className="panel">
           <div className="hero">
             <div>
-              <h1>
-                With {Math.round((s.rates.lost ?? 0) * 100)}% of confirmations lost, the baseline paid{" "}
-                <em>
-                  {baseline.summary.double_refunds} order{baseline.summary.double_refunds === 1 ? "" : "s"} twice
-                </em>{" "}
-                and lost {money(baseline.summary.money_lost)}. Dumen paid <em>nothing twice</em>.
-              </h1>
-              <p className="hint" style={{ margin: "8px 0 0" }}>
-                It rejected {dumen.summary.rejections ?? 0} already-paid request{dumen.summary.rejections === 1 ? "" : "s"} and escalated {dumen.summary.escalations ?? 0} case
-                {dumen.summary.escalations === 1 ? "" : "s"} for a person to decide · seed {s.seed}
-              </p>
+              {kind === "payout" && baseline.summary.payouts && dumen.summary.payouts ? (
+                <>
+                  <h1>
+                    Paying {baseline.summary.payouts.payouts} sellers with {Math.round((s.rates.lost ?? 0) * 100)}% of confirmations lost, the baseline re-sent whole batches:{" "}
+                    <em>
+                      {baseline.summary.payouts.duplicate_payouts} payout{baseline.summary.payouts.duplicate_payouts === 1 ? "" : "s"} paid twice
+                    </em>
+                    , {riskyPayouts(baseline.summary.payouts)} risky payout{riskyPayouts(baseline.summary.payouts) === 1 ? "" : "s"} sent, {money(baseline.summary.payouts.money_lost)} lost. Dumen{" "}
+                    <em>paid each seller once</em>.
+                  </h1>
+                  <p className="hint" style={{ margin: "8px 0 0" }}>
+                    It verified every payout in payout_truth before any re-send, rejected {dumen.summary.payouts.rejections} already paid and held {dumen.summary.payouts.escalations} for a person
+                    (changed bank account, above the approval threshold, or more than earned) · seed {s.seed}
+                  </p>
+                </>
+              ) : (
+                <>
+                  <h1>
+                    With {Math.round((s.rates.lost ?? 0) * 100)}% of confirmations lost, the baseline paid{" "}
+                    <em>
+                      {baseline.summary.double_refunds} order{baseline.summary.double_refunds === 1 ? "" : "s"} twice
+                    </em>
+                    {(baseline.summary.overpaid_orders?.length ?? 0) > 0 ? `, overpaid ${baseline.summary.overpaid_orders!.length}` : ""} and lost {money(baseline.summary.money_lost)}. Dumen paid{" "}
+                    <em>nothing twice</em>.
+                  </h1>
+                  <p className="hint" style={{ margin: "8px 0 0" }}>
+                    It rejected {dumen.summary.rejections ?? 0} already-paid request{dumen.summary.rejections === 1 ? "" : "s"} and escalated {dumen.summary.escalations ?? 0} case
+                    {dumen.summary.escalations === 1 ? "" : "s"} for a person to decide · seed {s.seed}
+                  </p>
+                </>
+              )}
               {openCases.length > 0 && run.info.agent === "dumen" && (
                 <a href="#escalations" className="attention">
                   <span className="pulse">{openCases.length}</span>
@@ -202,25 +239,36 @@ npm run compare`}</pre>
       )}
 
       <section className="panel">
-        <h2>
-          Same seed, same chaos · seed {s.seed} · {Math.round(s.rates.lost * 100)}% lost confirmations · {s.tickets_processed} tickets
-        </h2>
+        <div className="row" style={{ justifyContent: "space-between", marginBottom: 12 }}>
+          <h2 style={{ margin: 0 }}>
+            Same seed, same chaos · seed {s.seed} · {Math.round(s.rates.lost * 100)}% lost confirmations ·{" "}
+            {kind === "payout" ? `${s.payouts?.payouts ?? 0} payouts in ${s.payouts?.batches ?? 0} batches` : `${s.tickets_processed} refund tickets`}
+          </h2>
+          <div className="switch" role="tablist" aria-label="Money movement">
+            <Link href={`/?run=${run.info.id}&kind=refund`} className={kind === "refund" ? "on" : ""} role="tab" aria-selected={kind === "refund"}>
+              🧾 Refunds
+            </Link>
+            <Link href={`/?run=${run.info.id}&kind=payout`} className={kind === "payout" ? "on" : ""} role="tab" aria-selected={kind === "payout"}>
+              🏦 Payouts
+            </Link>
+          </div>
+        </div>
         <div className="versus">
-          <Side run={baseline} agent="baseline" />
-          <Side run={dumen} agent="dumen" />
+          <Side run={baseline} agent="baseline" kind={kind} />
+          <Side run={dumen} agent="dumen" kind={kind} />
         </div>
       </section>
 
       <div className="split">
         <section className="panel">
           <h2>
-            Refunds · {run.info.agent} run
+            {kind === "payout" ? "Payouts" : "Refunds"} · {run.info.agent} run
           </h2>
           <table>
             <thead>
               <tr>
-                <th>Ticket</th>
-                <th>Order</th>
+                <th>{kind === "payout" ? "Payout" : "Ticket"}</th>
+                <th>{kind === "payout" ? "Seller · batch" : "Order"}</th>
                 <th className="num">Amount</th>
                 <th className="num">Calls</th>
                 <th>Outcome</th>
@@ -233,7 +281,7 @@ npm run compare`}</pre>
                 return (
                   <tr key={r.key} className={r.key === selectedKey ? "sel" : ""}>
                     <td>
-                      <Link href={`/?run=${run.info.id}&refund=${r.key}`} scroll={false}>
+                      <Link href={`/?run=${run.info.id}&kind=${kind}&refund=${r.key}#trace`} scroll={false}>
                         {r.ticketId}
                       </Link>
                     </td>
@@ -278,17 +326,19 @@ npm run compare`}</pre>
             <h2>Escalation queue · {run.escalations.length}</h2>
             {!run.escalations.length && <p className="hint">Nothing escalated in this run.</p>}
             {run.escalations.map((c) => {
-              const entity = refunds.find((r) => r.refundKey === c.refund_key);
+              const ck: Kind = c.kind ?? "refund";
+              const entity = (ck === kind ? refunds : refundsOf(run, ck)).find((r) => r.refundKey === c.refund_key);
               return (
                 <div key={c.case_id} className="case">
                   <div className="row">
+                    <span className={`badge ${ck === "payout" ? "b-retried" : "b-rejected"}`}>{ck === "payout" ? "🏦 payout" : "🧾 refund"}</span>
                     <b>
-                      {c.ticket_id} · {c.order_id}
+                      {c.ticket_id} · {ck === "payout" ? `seller ${c.order_id}` : c.order_id}
                     </b>
                     {c.amount !== null && <span className="hint">{money(Number(c.amount))}</span>}
                     <span className="badge b-escalated">{c.decision ? `decided: ${c.decision.outcome ?? c.decision.verdict}` : "needs decision"}</span>
                     {entity && (
-                      <Link href={`/?run=${run.info.id}&refund=${entity.key}`} className="hint">
+                      <Link href={`/?run=${run.info.id}&kind=${ck}&refund=${entity.key}#trace`} className="hint">
                         trace →
                       </Link>
                     )}

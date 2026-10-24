@@ -127,12 +127,74 @@ async function handleGet(res: ServerResponse, refundKey: string) {
   send(res, 200, { refund_key: refundKey, attempts: rows });
 }
 
+// ── Bank rail: batch payouts ───────────────────────────────────────────────
+// One call carries several payouts. Same seeded behaviours, one per call; a lost response
+// executes only the first k items (k from the same PRNG) before the connection drops, so a
+// timeout leaves some payouts done and some not. Naive mode doesn't dedupe by payout_key.
+
+async function logPayout(payoutKey: string, amount: number) {
+  await db.query("INSERT INTO bank_rail_log (payout_key, bank_status, amount, executed_at) VALUES ($1, 'succeeded', $2, now())", [payoutKey, amount]);
+}
+
+async function alreadyPaidOut(payoutKey: string): Promise<boolean> {
+  const { rowCount } = await db.query("SELECT 1 FROM bank_rail_log WHERE payout_key = $1 AND bank_status = 'succeeded'", [payoutKey]);
+  return (rowCount ?? 0) > 0;
+}
+
+async function handlePayoutBatch(req: IncomingMessage, res: ServerResponse) {
+  const body = await readJson(req);
+  const items: Array<{ payout_key: string; amount: number }> = Array.isArray(body.items) ? body.items : [];
+  if (!items.length || items.length > 50 || !items.every((i) => /^[A-Za-z0-9_.:-]{1,100}$/.test(String(i.payout_key)) && Number(i.amount) > 0)) {
+    return send(res, 400, { error: "items: 1-50 of {payout_key, amount > 0}" });
+  }
+  const behaviour = nextBehaviour();
+  const n = ++callNo;
+  console.log(`#${n} POST /payouts/batch ${body.batch_id ?? "-"} [${items.map((i) => i.payout_key).join(",")}] → ${behaviour}`);
+
+  if (behaviour === "down") return hang(req);
+  if (behaviour === "real_fail") return send(res, 502, { batch_id: body.batch_id, status: "failed", error: "bank rejected the batch" });
+
+  const execute = async (list: typeof items) => {
+    const results: Array<{ payout_key: string; status: string; duplicate?: boolean }> = [];
+    for (const i of list) {
+      if (args.mode === "idempotent" && (await alreadyPaidOut(i.payout_key))) {
+        results.push({ payout_key: i.payout_key, status: "succeeded", duplicate: true });
+        continue;
+      }
+      await logPayout(i.payout_key, Number(i.amount));
+      results.push({ payout_key: i.payout_key, status: "succeeded" });
+    }
+    return results;
+  };
+
+  if (behaviour === "slow_confirm") {
+    setTimeout(() => execute(items).catch((e) => console.error(`#${n} late batch failed: ${e.message}`)), SLOW_MS);
+    return send(res, 202, { batch_id: body.batch_id, status: "processing" });
+  }
+  if (behaviour === "lost_response") {
+    const k = Math.floor(rand() * (items.length + 1)); // 0..n items executed before the drop
+    await execute(items.slice(0, k));
+    console.log(`#${n}   executed ${k}/${items.length} before the connection dropped`);
+    return hang(req);
+  }
+  return send(res, 200, { batch_id: body.batch_id, status: "succeeded", items: await execute(items) });
+}
+
+async function handleGetPayout(res: ServerResponse, payoutKey: string) {
+  const { rows } = await db.query("SELECT payout_key, bank_status, amount, executed_at FROM bank_rail_log WHERE payout_key = $1 ORDER BY id", [payoutKey]);
+  if (!rows.length) return send(res, 404, { payout_key: payoutKey, status: "not_found" });
+  send(res, 200, { payout_key: payoutKey, attempts: rows });
+}
+
 const server = createServer(async (req, res) => {
   try {
     const url = new URL(req.url ?? "/", "http://localhost");
     if (req.method === "POST" && url.pathname === "/refund") return await handleRefund(req, res);
     const m = url.pathname.match(/^\/refunds\/([^/]+)$/);
     if (req.method === "GET" && m) return await handleGet(res, decodeURIComponent(m[1]));
+    if (req.method === "POST" && url.pathname === "/payouts/batch") return await handlePayoutBatch(req, res);
+    const pm = url.pathname.match(/^\/payouts\/([^/]+)$/);
+    if (req.method === "GET" && pm) return await handleGetPayout(res, decodeURIComponent(pm[1]));
     send(res, 404, { error: "not found" });
   } catch (e: any) {
     if (!res.headersSent) send(res, 500, { error: e.message });

@@ -97,7 +97,8 @@ export async function runBaseline(ticket: Ticket, deps: BaselineDeps): Promise<{
   if (!decision) return { outcome: "error" };
   if (decision.decision !== "refund") return { outcome: "declined" };
 
-  const amount = Math.min(Number.isFinite(decision.amount) && decision.amount > 0 ? decision.amount : ticket.amount_requested, Number(order.amount));
+  // Confident and wrong: the baseline pays whatever amount it decided, even above the order.
+  const amount = Number.isFinite(decision.amount) && decision.amount > 0 ? decision.amount : ticket.amount_requested;
   const refundKey = `rf_${ticket.ticket_id}`;
   await ordersDb.query(
     "INSERT INTO refunds (refund_key, order_id, amount, internal_status, requested_at) VALUES ($1, $2, $3, 'pending', now()) ON CONFLICT (refund_key) DO NOTHING",

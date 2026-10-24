@@ -4,7 +4,7 @@ import { IngestPipelineService } from "./ingest.js";
 import { WorldStoreService } from "./store.js";
 
 export * from "./types.js";
-export { refundEntityId, refundKeyFor, stableHash } from "./ids.js";
+export { payoutEntityId, refundEntityId, refundKeyFor, stableHash } from "./ids.js";
 export { HUMAN_AGENT, InvariantViolation, MAX_RETRIES } from "./machine.js";
 export { ContextBuilderService, type RefundContext } from "./context.js";
 export { IngestPipelineService, PIPELINE_MANIFEST, type Actor, type IngestResult } from "./ingest.js";

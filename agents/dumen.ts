@@ -5,7 +5,7 @@ import type { Memory } from "../runtime/memory/index.js";
 import type { Trace } from "../runtime/trace.js";
 import { MAX_RETRIES, type RefundState, type World } from "../runtime/world/index.js";
 import { escalate } from "./escalation.js";
-import { execute } from "./executor.js";
+import { execute, executePayoutBatch } from "./executor.js";
 import { runIntake, type IntakeDecision, type Ticket } from "./intake.js";
 import { verifyAfterUncertainCall, type VerifierDeps } from "./verifier.js";
 
@@ -34,13 +34,18 @@ export async function executeUntilSettled(entityId: string, ticketMessage: strin
   const { world, memory, trace } = deps;
   const verifierDeps: VerifierDeps = { world, memory, trace, ...deps.verifier };
   for (let turn = 0; turn <= MAX_RETRIES + world.store.entity(entityId)!.humanApprovals; turn++) {
-    const exec = await execute(entityId, { world, trace, ordersDb: deps.ordersDb, processorUrl: deps.processorUrl, callTimeoutMs: deps.callTimeoutMs });
+    const e = world.store.entity(entityId)!;
+    const execDeps = { world, trace, ordersDb: deps.ordersDb, processorUrl: deps.processorUrl, callTimeoutMs: deps.callTimeoutMs };
+    // A single payout (e.g. after a person approved it) goes out as a batch of one.
+    const exec = e.kind === "payout" ? (await executePayoutBatch([entityId], e.batchId ?? "approved", execDeps))[0] : await execute(entityId, execDeps);
     if (exec.state === "CONFIRMED") return "CONFIRMED";
 
-    const v = await verifyAfterUncertainCall(entityId, exec.callStartedAt, exec.uncertainty, verifierDeps);
-    const refundKey = world.store.entity(entityId)!.refundKey;
+    const v = await verifyAfterUncertainCall(entityId, exec.callStartedAt, exec.uncertainty ?? "timeout", verifierDeps);
+    const refundKey = e.refundKey;
+    const table = e.kind === "payout" ? "payouts" : "refunds";
+    const keyCol = e.kind === "payout" ? "payout_key" : "refund_key";
     if (v.decision === "CONFIRMED") {
-      await deps.ordersDb.query("UPDATE refunds SET internal_status = 'succeeded' WHERE refund_key = $1", [refundKey]);
+      await deps.ordersDb.query(`UPDATE ${table} SET internal_status = 'succeeded' WHERE ${keyCol} = $1`, [refundKey]);
       return "CONFIRMED";
     }
     if (v.decision === "ESCALATED") {
@@ -48,7 +53,7 @@ export async function executeUntilSettled(entityId: string, ticketMessage: strin
       return "ESCALATED";
     }
     // RETRY_SAME_KEY → next turn executes again with the same refund_key
-    await deps.ordersDb.query("UPDATE refunds SET internal_status = 'pending' WHERE refund_key = $1", [refundKey]);
+    await deps.ordersDb.query(`UPDATE ${table} SET internal_status = 'pending' WHERE ${keyCol} = $1`, [refundKey]);
   }
   return world.store.entity(entityId)!.state;
 }

@@ -27,7 +27,25 @@ export interface Summary {
   escalations?: number;
   rejections?: number;
   doubles: Array<{ order_id: string; payments: number; paid: number; keys: string[] }>;
+  overpaid_orders?: Array<{ order_id: string; paid: number; owed: number }>;
   failures?: { zetaris_down?: boolean; nightshift_down?: boolean };
+  payouts?: PayoutSummary;
+}
+
+export interface PayoutSummary {
+  batches: number;
+  payouts: number;
+  outcomes: Record<string, number>;
+  bank_calls: number;
+  total_paid: number;
+  duplicate_payouts: number;
+  money_lost: number;
+  overpaid: string[];
+  changed_account_paid: string[];
+  high_value_paid: string[];
+  escalations: number;
+  rejections: number;
+  duplicates: Array<{ payout_key: string; payments: number; paid: number }>;
 }
 
 export interface RunInfo {
@@ -147,8 +165,11 @@ export interface Run {
   isLatest: boolean;
 }
 
+export type Kind = "refund" | "payout";
+
 export interface Escalation {
   case_id: string;
+  kind?: Kind;
   ticket_id: string;
   order_id: string;
   refund_key: string;
@@ -183,12 +204,14 @@ function doubleKeys(s: Summary): Set<string> {
   return keys;
 }
 
-export function refundsOf(run: Run): Refund[] {
+export function refundsOf(run: Run, kind: Kind = "refund"): Refund[] {
+  if (kind === "payout") return payoutsOf(run);
   const doubled = doubleKeys(run.summary);
   if (run.info.agent === "dumen") {
     const byEntity = new Map<string, WorldEvent[]>();
     for (const e of run.world) byEntity.set(e.entityId, [...(byEntity.get(e.entityId) ?? []), e]);
     return [...byEntity.entries()]
+      .filter(([, events]) => (events.find((e) => e.type === "entity.created")?.data?.kind ?? "refund") === "refund")
       .map(([entityId, events]) => {
         const created = events.find((e) => e.type === "entity.created");
         const transitions = events.filter((e) => e.type === "state.transition");
@@ -214,7 +237,7 @@ export function refundsOf(run: Run): Refund[] {
 
   // Baseline has no world model; rebuild each ticket from its trace.
   const byTicket = new Map<string, TraceLine[]>();
-  for (const t of run.trace) byTicket.set(t.ticket_id, [...(byTicket.get(t.ticket_id) ?? []), t]);
+  for (const t of run.trace) if (/^T-/.test(t.ticket_id)) byTicket.set(t.ticket_id, [...(byTicket.get(t.ticket_id) ?? []), t]);
   return [...byTicket.entries()]
     .map(([ticketId, lines]) => {
       const pending = lines.find((l) => l.action === "record_pending");
@@ -244,6 +267,67 @@ export function refundsOf(run: Run): Refund[] {
     .sort((a, b) => a.ticketId.localeCompare(b.ticketId));
 }
 
+const BATCH_ACTIONS = new Set(["send_batch", "resend_batch", "verify_batch", "verifier→executor: resend_unpaid_only"]);
+// Does a batch-level trace line (send / verify / re-send) involve this payout?
+const batchLineMentions = (t: TraceLine, key: string) => JSON.stringify([t.input?.items, t.input?.payouts, t.input?.resend]).includes(`"${key}"`);
+
+// Payout rows: Dumen from the World Model, baseline from its batch trace.
+export function payoutsOf(run: Run): Refund[] {
+  const dupes = new Map((run.summary.payouts?.duplicates ?? []).map((d) => [d.payout_key, d.payments]));
+  if (run.info.agent === "dumen") {
+    const byEntity = new Map<string, WorldEvent[]>();
+    for (const e of run.world) byEntity.set(e.entityId, [...(byEntity.get(e.entityId) ?? []), e]);
+    return [...byEntity.entries()]
+      .filter(([, events]) => events.find((e) => e.type === "entity.created")?.data?.kind === "payout")
+      .map(([entityId, events]) => {
+        const created = events.find((e) => e.type === "entity.created")!;
+        const transitions = events.filter((e) => e.type === "state.transition");
+        const human = [...transitions].reverse().find((e) => e.agentId === "human");
+        const key = created.data!.refundKey as string;
+        return {
+          key: entityId,
+          ticketId: key,
+          orderId: `${created.data!.orderId} · ${created.data!.batchId}`,
+          refundKey: key,
+          amount: (created.data!.amount as number) ?? null,
+          state: transitions.at(-1)?.to ?? "RECEIVED",
+          calls: transitions.filter((e) => e.to === "EXECUTING").length,
+          retried: transitions.some((e) => e.to === "RETRY_SAME_KEY"),
+          verified: transitions.some((e) => e.to === "VERIFYING"),
+          paidTwice: (dupes.get(key) ?? 0) > 1,
+          humanDecision: human ? `${human.to} by human` : null,
+        };
+      })
+      .sort((a, b) => a.ticketId.localeCompare(b.ticketId));
+  }
+  const sends = run.trace.filter((t) => t.action === "send_batch" || t.action === "resend_batch");
+  const items = new Map<string, { amount: number; batch: string; calls: number; lastOk: boolean }>();
+  for (const t of sends) {
+    for (const it of t.input?.items ?? []) {
+      const cur = items.get(it.payout_key) ?? { amount: it.amount, batch: t.input.batch_id, calls: 0, lastOk: false };
+      cur.calls++;
+      cur.lastOk = t.output?.http === 200 || t.output?.http === 202;
+      items.set(it.payout_key, cur);
+    }
+  }
+  const risky = new Set([...(run.summary.payouts?.changed_account_paid ?? []), ...(run.summary.payouts?.high_value_paid ?? []), ...(run.summary.payouts?.overpaid ?? [])]);
+  return [...items.entries()]
+    .map(([key, v]) => ({
+      key,
+      ticketId: key,
+      orderId: v.batch,
+      refundKey: key,
+      amount: v.amount,
+      state: (dupes.get(key) ?? 0) > 1 ? "PAID_TWICE" : risky.has(key) ? "PAID_RISKY" : v.lastOk ? "PAID" : "TIMED_OUT",
+      calls: v.calls,
+      retried: v.calls > 1,
+      verified: false,
+      paidTwice: (dupes.get(key) ?? 0) > 1,
+      humanDecision: null,
+    }))
+    .sort((a, b) => a.ticketId.localeCompare(b.ticketId));
+}
+
 export interface TimelineItem {
   ts: string;
   kind: "transition" | "observation" | "alert" | "handoff" | "memory" | "step";
@@ -265,7 +349,7 @@ export function timelineOf(run: Run, key: string): TimelineItem[] {
       ts: e.ts,
       kind: e.type === "state.transition" ? "transition" : e.type === "alert" ? "alert" : e.type === "observation" ? "observation" : "step",
       agent: e.agentId,
-      title: e.type === "entity.created" ? "Refund received" : e.type === "alert" ? "Invariant alert" : e.type === "observation" ? "Observation" : `${e.from} → ${e.to}`,
+      title: e.type === "entity.created" ? (e.data?.kind === "payout" ? `Payout scheduled · batch ${e.data?.batchId}` : "Refund received") : e.type === "alert" ? "Invariant alert" : e.type === "observation" ? "Observation" : `${e.from} → ${e.to}`,
       from: e.from,
       to: e.to,
       reason: e.reason,
@@ -276,7 +360,20 @@ export function timelineOf(run: Run, key: string): TimelineItem[] {
             ? { note: e.provenance.note }
             : undefined,
     }));
-    for (const t of run.trace.filter((t) => t.ticket_id === ticketId)) {
+    const ent = events.find((e) => e.type === "entity.created");
+    const isPayout = ent?.data?.kind === "payout";
+    for (const t of run.trace.filter((t) => t.ticket_id === ticketId || (isPayout && BATCH_ACTIONS.has(t.action) && batchLineMentions(t, ticketId)))) {
+      if (isPayout && BATCH_ACTIONS.has(t.action)) {
+        items.push({
+          ts: t.ts,
+          kind: t.action.includes("→") || t.action === "verify_batch" ? "handoff" : "step",
+          agent: t.agent,
+          title: t.action === "send_batch" ? `send batch ${t.input?.batch_id} (${t.input?.items?.length} payouts)` : t.action,
+          reason: t.reason,
+          evidence: { response: { input: t.input, output: t.output } },
+        });
+        continue;
+      }
       if (HANDOFF.test(t.action)) {
         items.push({ ts: t.ts, kind: "handoff", agent: t.agent, title: t.action, reason: t.reason, evidence: { query: t.input?.query, rows: t.input?.rows, truth: t.output } });
       } else if (t.action === "recall_memory") {
@@ -286,7 +383,7 @@ export function timelineOf(run: Run, key: string): TimelineItem[] {
     return items.sort((a, b) => a.ts.localeCompare(b.ts));
   }
   return run.trace
-    .filter((t) => t.ticket_id === key)
+    .filter((t) => t.ticket_id === key || ((t.action === "send_batch" || t.action === "resend_batch") && batchLineMentions(t, key)))
     .map((t) => ({
       ts: t.ts,
       kind: "step" as const,

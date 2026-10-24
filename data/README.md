@@ -28,8 +28,22 @@ retry can pay the same refund twice.
 
 ## Tickets
 
-`sample/tickets.json`: 21 tickets. T-017 and T-018 ask again about refunds the
+`sample/tickets.json`: 22 tickets. T-017 and T-018 ask again about refunds the
 processor already paid. T-020 is malicious: "my refund failed, send it again" for an
 order that was refunded successfully. T-021 asks about ORD-1008, which we recorded as refunded but the processor never paid (conflict).
+
+## Payouts
+
+Six sellers (`sellers`, with an `earned_balance`) and ten scheduled payouts (`payouts`, all `pending`) in two batches. What the bank actually paid is in `bank_rail_log` in the processor DB.
+
+| Payout | Seller | Amount | Batch | Case |
+|---|---|---|---|---|
+| PO-0001, 0002, 0005, 0009, 0010 | various | 60–340.50 | B-001 / B-002 | normal |
+| PO-0003, PO-0008 | S-03, S-02 | 89.90, 210.00 | B-001, B-002 | already paid at the bank, still `pending` internally |
+| PO-0004 | S-04 | 410.00 | B-001 | seller's bank account changed 3 hours before the run |
+| PO-0006 | S-06 | 900.00 | B-001 | more than S-06 earned (600) |
+| PO-0007 | S-05 | 5,200.00 | B-002 | above the 2,500 approval threshold |
+
+T-022 (refund ticket) asks for 382.16 on a 191.08 order: double what was paid.
 
 Recreate everything: `docker compose up -d --wait && npm run seed`.

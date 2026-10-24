@@ -29,12 +29,15 @@ export function reduceEntity(events: WorldEvent[]): RefundEntity | null {
   let e: RefundEntity | null = null;
   for (const ev of events) {
     if (ev.type === "entity.created") {
-      const d = ev.data as { refundKey: string; ticketId: string; orderId: string; amount?: number; currency?: string };
+      const d = ev.data as { kind?: "refund" | "payout"; refundKey: string; ticketId: string; orderId: string; batchId?: string; amount?: number; currency?: string };
       e = {
         id: ev.entityId,
+        kind: d.kind ?? "refund",
+        actionKey: d.refundKey,
         refundKey: d.refundKey,
         ticketId: d.ticketId,
         orderId: d.orderId,
+        batchId: d.batchId ?? null,
         amount: d.amount ?? null,
         currency: d.currency ?? null,
         state: "RECEIVED",

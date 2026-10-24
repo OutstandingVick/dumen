@@ -1,4 +1,4 @@
--- Dumen semantic layer in Zetaris. One statement per block; run in order.
+-- Dumen semantic layer in Zetaris: refund_truth and payout_truth. One statement per block; run in order.
 -- The Postgres logins are the local, synthetic ones from docker-compose.yml.
 -- Zetaris runs in Docker, so it reaches the Dumen databases via host.docker.internal.
 
@@ -57,3 +57,45 @@ FULL OUTER JOIN (
   FROM dumen_processor.processor_log
   GROUP BY refund_key
 ) p ON r.refund_key = p.refund_key;
+
+-- ── Payouts (marketplace → sellers) ─────────────────────────────────────────
+
+-- 7. Source A: sellers + scheduled payouts
+REGISTER DATASOURCE TABLES ('sellers', 'payouts') FROM dumen_orders;
+
+-- 8. Source B: what the bank rail actually executed
+REGISTER DATASOURCE TABLE 'bank_rail_log' FROM dumen_processor;
+
+-- 9. payout_truth: one row per payout_key, same truth rules as refund_truth, plus the
+--    seller's earned balance and whether their bank account changed in the last 24 hours.
+CREATE OR REPLACE SCHEMASTORE VIEW payout_truth WITH CONTAINER dumen AS
+SELECT
+  COALESCE(p.payout_key, b.payout_key)   AS payout_key,
+  p.seller_id,
+  p.batch_id,
+  COALESCE(p.amount, b.paid_amount)      AS amount,
+  p.internal_status,
+  b.bank_status,
+  COALESCE(b.success_count, 0)           AS success_count,
+  COALESCE(b.paid_amount, 0)             AS paid_amount,
+  s.earned_balance,
+  s.bank_account_changed_at,
+  CASE WHEN s.bank_account_changed_at > current_timestamp() - INTERVAL 24 HOURS THEN true ELSE false END AS account_changed_recently,
+  CASE
+    WHEN COALESCE(b.success_count, 0) > 1 THEN 'conflict'
+    WHEN COALESCE(b.success_count, 0) = 1 THEN 'paid'
+    WHEN p.internal_status = 'succeeded'  THEN 'conflict'
+    ELSE 'not_paid'
+  END                                    AS truth
+FROM dumen_orders.payouts p
+LEFT JOIN dumen_orders.sellers s ON p.seller_id = s.seller_id
+FULL OUTER JOIN (
+  SELECT
+    payout_key,
+    SUM(CASE WHEN bank_status = 'succeeded' THEN 1 ELSE 0 END)      AS success_count,
+    SUM(CASE WHEN bank_status = 'succeeded' THEN amount ELSE 0 END) AS paid_amount,
+    CASE WHEN SUM(CASE WHEN bank_status = 'succeeded' THEN 1 ELSE 0 END) > 0
+         THEN 'succeeded' ELSE 'failed' END                          AS bank_status
+  FROM dumen_processor.bank_rail_log
+  GROUP BY payout_key
+) b ON p.payout_key = b.payout_key;

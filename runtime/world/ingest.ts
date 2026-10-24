@@ -1,7 +1,7 @@
 // IngestPipelineService: the only write path into the world. Every agent writes through it.
 // Of the spec's 10-step canonical pipeline, Dumen wires the steps a refund timeline needs
 // (see PIPELINE_MANIFEST); the rest are recorded as not applicable rather than left silent.
-import { refundEntityId, refundKeyFor } from "./ids.js";
+import { payoutEntityId, refundEntityId, refundKeyFor } from "./ids.js";
 import { checkTransition, InvariantViolation } from "./machine.js";
 import type { WorldStoreService } from "./store.js";
 import type { EventInput, Provenance, RefundEntity, RefundState, TruthEvidence, WorldEvent } from "./types.js";
@@ -89,6 +89,29 @@ export class IngestPipelineService {
         orderId: ticket.order_id,
         amount: ticket.amount_requested,
         currency: ticket.currency,
+      },
+    });
+  }
+
+  // Create (or re-find) the payout entity. Its idempotency key is the payout_key itself.
+  async receivePayout(
+    payout: { payout_key: string; seller_id: string; batch_id: string; amount: number },
+    actor: Actor,
+  ): Promise<IngestResult> {
+    return this.ingest({
+      entityId: payoutEntityId(payout.payout_key),
+      type: "entity.created",
+      agentId: actor.agentId,
+      runId: this.store.runId,
+      taskId: actor.taskId,
+      provenance: { source: "ticket", rows: [payout], note: "scheduled payout" },
+      data: {
+        kind: "payout",
+        refundKey: payout.payout_key,
+        ticketId: payout.payout_key,
+        orderId: payout.seller_id,
+        batchId: payout.batch_id,
+        amount: payout.amount,
       },
     });
   }

@@ -13,21 +13,25 @@ import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import pg from "pg";
 import { runBaseline } from "../agents/baseline.js";
+import { runBaselinePayoutBatch } from "../agents/baseline-payouts.js";
+import { runPayoutBatch, type ScheduledPayout } from "../agents/payouts.js";
+import { PAYOUT_APPROVAL_THRESHOLD } from "../agents/verifier.js";
 import { runDumen, type DumenResult } from "../agents/dumen.js";
 import type { IntakeDecision, Ticket } from "../agents/intake.js";
 import { generator } from "../runtime/generator.js";
 import { openMemory, PROMOTION_POLICY } from "../runtime/memory/index.js";
 import { Trace } from "../runtime/trace.js";
 import { openWorld } from "../runtime/world/index.js";
-import { getAllRefundTruth } from "../runtime/zetaris.js";
+import { getAllPayoutTruth, getAllRefundTruth } from "../runtime/zetaris.js";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const INTAKE_CACHE = join(ROOT, "samples", "intake_cache.json");
 
 const { values: args } = parseArgs({
+  allowNegative: true, // --no-payouts
   options: {
     agent: { type: "string", default: "baseline" },
-    tickets: { type: "string", default: "21" },
+    tickets: { type: "string", default: "22" },
     seed: { type: "string", default: "42" },
     lost: { type: "string", default: "0.2" },
     slow: { type: "string", default: "0" },
@@ -38,6 +42,7 @@ const { values: args } = parseArgs({
     concurrency: { type: "string" },
     "cached-intake": { type: "boolean", default: false },
     "save-intake": { type: "boolean", default: false },
+    payouts: { type: "boolean", default: true }, // after the refunds, run the seller payout batches
     "fresh-memory": { type: "boolean", default: false }, // ignore and don't touch saved H-MEM lessons
     // Failure drills: point the client at a closed port, so the real "connection refused"
     // path runs. Zetaris comes back before the final report so the run can still be scored.
@@ -154,6 +159,15 @@ try {
   const count = (k: string) => (outcomes[k] = (outcomes[k] ?? 0) + 1);
   let dumenResults: DumenResult[] = [];
   let manifest: unknown = null;
+  const payoutStates = new Map<string, string>(); // payout_key → final state (dumen) or batch outcome (baseline)
+
+  // Payouts run after every refund, so refund chaos (the processor's seeded call order) is
+  // exactly what it was before payouts existed.
+  const { rows: scheduled } = await ordersDb.query<ScheduledPayout>(
+    "SELECT payout_key, seller_id, amount::float AS amount, batch_id FROM payouts WHERE internal_status = 'pending' ORDER BY batch_id, payout_key",
+  );
+  const batches = new Map<string, ScheduledPayout[]>();
+  if (args.payouts) for (const p of scheduled) batches.set(p.batch_id, [...(batches.get(p.batch_id) ?? []), p]);
 
   if (args.agent === "baseline") {
     await pool(tickets, CONCURRENCY, async (ticket) => {
@@ -162,6 +176,13 @@ try {
       count(outcome);
       log(`  ${ticket.ticket_id} ${ticket.order_id} → ${outcome} (${Date.now() - s}ms)`);
     });
+    if (batches.size) step(`Running baseline payouts: ${scheduled.length} payouts in ${batches.size} batches`);
+    for (const [batchId, list] of batches) {
+      const s = Date.now();
+      const outcome = await runBaselinePayoutBatch(batchId, list, { ordersDb, processorUrl: `http://127.0.0.1:${PORT}`, trace, callTimeoutMs: CALL_TIMEOUT_MS });
+      for (const p of list) payoutStates.set(p.payout_key, outcome);
+      log(`  ${batchId} (${list.length} payouts) → ${outcome} (${Date.now() - s}ms)`);
+    }
   } else {
     const world = openWorld(runId);
     const fresh = args["fresh-memory"];
@@ -184,6 +205,23 @@ try {
       log(`  ${ticket.ticket_id} ${ticket.order_id} → ${r.state}${r.executions ? ` (${r.executions} call${r.executions > 1 ? "s" : ""})` : ""} (${Date.now() - s}ms)`);
       return r;
     });
+
+    if (batches.size) step(`Running Dumen payouts: ${scheduled.length} payouts in ${batches.size} batches`);
+    for (const [batchId, list] of batches) {
+      const s = Date.now();
+      const results = await runPayoutBatch(batchId, list, {
+        world,
+        memory,
+        trace,
+        ordersDb,
+        processorUrl: `http://127.0.0.1:${PORT}`,
+        callTimeoutMs: CALL_TIMEOUT_MS,
+        verifier: { defaultWaitMs: 2000, maxWaitMs: 8000, pollMs: 300 },
+        modelSummaries: intakeMode === "live",
+      });
+      for (const r of results) payoutStates.set(r.payoutKey, r.state);
+      log(`  ${batchId} → ${results.map((r) => `${r.payoutKey} ${r.state}${r.executions ? ` (${r.executions})` : ""}`).join(", ")} (${Date.now() - s}ms)`);
+    }
 
     // Run end: promote lessons that meet the policy, persist long-term memory.
     // With --fresh-memory the lessons still drive this run, but nothing is saved for the next.
@@ -223,12 +261,52 @@ try {
   const runRows = truth.filter((r) => !r.refund_key.startsWith("rf_hist_"));
   const totalRefunded = runRows.reduce((s, r) => s + r.paid_amount, 0);
   const doubles = [...byOrder.entries()].filter(([, o]) => o.payments > 1);
-  // Everything paid beyond the first payment per order is money lost.
-  const moneyLost = doubles.reduce((s, [, o]) => s + (o.paid - o.paid / o.payments), 0);
+  // Money lost = everything paid on an order beyond what it was worth: second payments and
+  // overpayments alike.
+  const { rows: orderRows } = await ordersDb.query<{ order_id: string; amount: string }>("SELECT order_id, amount FROM orders");
+  const orderAmount = new Map(orderRows.map((o) => [o.order_id, Number(o.amount)]));
+  const excess = (orderId: string, o: { paid: number }) => Math.max(0, o.paid - (orderAmount.get(orderId) ?? o.paid));
+  const moneyLost = [...byOrder.entries()].reduce((s, [id, o]) => s + excess(id, o), 0);
+  const overpaid = [...byOrder.entries()].filter(([id, o]) => o.payments === 1 && excess(id, o) > 0.005);
   for (const [orderId, o] of doubles) log(`  DOUBLE  ${orderId}  paid ${o.payments}× = ${money(o.paid)}  [${o.keys.join(", ")}]`);
+  for (const [orderId, o] of overpaid) log(`  OVERPAID  ${orderId}  paid ${money(o.paid)} on a ${money(orderAmount.get(orderId) ?? 0)} order`);
 
-  const escalationsPath = join(runDir, "escalations.json");
-  const escalations = existsSync(escalationsPath) ? JSON.parse(readFileSync(escalationsPath, "utf8")) : [];
+  // Payouts, from payout_truth: duplicates, money beyond what was owed (scheduled amount,
+  // capped at the seller's earned balance), and risky payments that went out.
+  let payoutSummary: Record<string, unknown> | undefined;
+  if (batches.size) {
+    step("Asking Zetaris what the bank actually paid (dumen.payout_truth)");
+    const pt = await getAllPayoutTruth();
+    const owedPayout = (p: (typeof pt)[number]) => Math.min(p.amount, p.earned_balance);
+    const isNew = (p: (typeof pt)[number]) => p.payout_key !== "PO-0003" && p.payout_key !== "PO-0008"; // seeded as already paid
+    const dupes = pt.filter((p) => p.success_count > 1);
+    const payoutLost = pt.reduce((s, p) => s + Math.max(0, p.paid_amount - owedPayout(p)), 0);
+    const pOut: Record<string, number> = {};
+    for (const st of payoutStates.values()) pOut[st] = (pOut[st] ?? 0) + 1;
+    payoutSummary = {
+      batches: batches.size,
+      payouts: scheduled.length,
+      outcomes: pOut,
+      bank_calls: processorLog.filter((l) => l.includes("POST /payouts/batch")).length,
+      total_paid: Number(money(pt.filter(isNew).reduce((s, p) => s + p.paid_amount, 0))),
+      duplicate_payouts: dupes.length,
+      money_lost: Number(money(payoutLost)),
+      overpaid: pt.filter((p) => p.success_count >= 1 && p.paid_amount > p.earned_balance + 0.005).map((p) => p.payout_key),
+      changed_account_paid: pt.filter((p) => p.account_changed_recently && p.success_count > 0).map((p) => p.payout_key),
+      high_value_paid: pt.filter((p) => p.amount > PAYOUT_APPROVAL_THRESHOLD && p.success_count > 0).map((p) => p.payout_key),
+      escalations: escalationsOf("payout"),
+      rejections: pOut.REJECTED ?? 0,
+      key_payouts: { "PO-0004": payoutStates.get("PO-0004") ?? null, "PO-0006": payoutStates.get("PO-0006") ?? null, "PO-0007": payoutStates.get("PO-0007") ?? null },
+      duplicates: dupes.map((p) => ({ payout_key: p.payout_key, payments: p.success_count, paid: p.paid_amount })),
+    };
+    for (const d of dupes) log(`  DUPLICATE PAYOUT  ${d.payout_key}  paid ${d.success_count}× = ${money(d.paid_amount)}`);
+  }
+
+  function escalationsOf(kind: "refund" | "payout"): number {
+    const path = join(runDir, "escalations.json");
+    const all: Array<{ kind?: string }> = existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) : [];
+    return all.filter((c) => (c.kind ?? "refund") === kind).length;
+  }
   const ticketState = (id: string) => dumenResults.find((r) => r.ticketId === id)?.state ?? null;
 
   const summary = {
@@ -246,11 +324,13 @@ try {
     total_refunded: Number(money(totalRefunded)),
     double_refunds: doubles.length,
     money_lost: Number(money(moneyLost)),
-    escalations: escalations.length,
+    overpaid_orders: overpaid.map(([order_id, o]) => ({ order_id, paid: Number(money(o.paid)), owed: orderAmount.get(order_id) })),
+    escalations: escalationsOf("refund"),
     failures: { zetaris_down: args["zetaris-down"], nightshift_down: args["nightshift-down"] },
     rejections: outcomes.REJECTED ?? 0,
-    key_tickets: args.agent === "dumen" ? { "T-017": ticketState("T-017"), "T-018": ticketState("T-018"), "T-020": ticketState("T-020"), "T-021": ticketState("T-021") } : undefined,
+    key_tickets: args.agent === "dumen" ? { "T-017": ticketState("T-017"), "T-018": ticketState("T-018"), "T-020": ticketState("T-020"), "T-021": ticketState("T-021"), "T-022": ticketState("T-022") } : undefined,
     doubles: doubles.map(([order_id, o]) => ({ order_id, payments: o.payments, paid: Number(money(o.paid)), keys: o.keys })),
+    payouts: payoutSummary,
   };
   writeFileSync(join(runDir, "summary.json"), JSON.stringify(summary, null, 2) + "\n");
   writeFileSync(join(runDir, "processor.log"), processorLog.join("\n") + "\n");
@@ -263,7 +343,20 @@ try {
   total refunded    : ${money(totalRefunded)}
   DOUBLE refunds    : ${summary.double_refunds}
   money lost        : ${money(moneyLost)}
-  escalations       : ${summary.escalations}
+  overpaid orders   : ${overpaid.length}
+  escalations       : ${summary.escalations}${
+    payoutSummary
+      ? `
+  ── payouts ──
+  bank calls        : ${payoutSummary.bank_calls}
+  total paid out    : ${money(payoutSummary.total_paid as number)}
+  DUPLICATE payouts : ${payoutSummary.duplicate_payouts}
+  money lost        : ${money(payoutSummary.money_lost as number)}
+  changed-acct paid : ${(payoutSummary.changed_account_paid as string[]).join(", ") || "none"}
+  high-value paid   : ${(payoutSummary.high_value_paid as string[]).join(", ") || "none"}
+  escalations       : ${payoutSummary.escalations}`
+      : ""
+  }
   run time          : ${(summary.duration_ms / 1000).toFixed(1)}s
   logs              : logs/${runId}/`);
   console.log(`@@RESULT ${JSON.stringify(summary)}`);

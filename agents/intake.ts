@@ -5,7 +5,7 @@ import { generator } from "../runtime/generator.js";
 import type { Memory } from "../runtime/memory/index.js";
 import type { Trace } from "../runtime/trace.js";
 import type { World } from "../runtime/world/index.js";
-import { checkOrderBeforeIntake, type VerifierDeps } from "./verifier.js";
+import { checkAmountOwed, checkOrderBeforeIntake, type VerifierDeps } from "./verifier.js";
 
 export const AGENT = "intake";
 
@@ -108,7 +108,16 @@ export async function runIntake(ticket: Ticket, entityId: string, deps: IntakeDe
     return { outcome: "REJECTED", decision };
   }
 
-  const amount = Math.min(Number.isFinite(decision.amount) && decision.amount > 0 ? decision.amount : ticket.amount_requested, deps.order.amount);
+  // Confident and wrong: the model (or the customer) can ask for more than was paid. The
+  // Verifier checks the amount against what's owed; above it escalates, it is never trimmed
+  // silently and never paid.
+  const amount = Number.isFinite(decision.amount) && decision.amount > 0 ? decision.amount : ticket.amount_requested;
+  const owed = Math.max(0, deps.order.amount - check.evidence.paid_amount);
+  const amountCheck = checkAmountOwed(ticket.ticket_id, "refund", amount, owed, deps.verifier);
+  if (!amountCheck.ok) {
+    await world.ingest.transition(entityId, "ESCALATED", actor, { provenance, evidence: check.evidence, reason: amountCheck.reason, data: { amount, owed } });
+    return { outcome: "ESCALATED", decision: { ...decision, amount } };
+  }
   await world.ingest.transition(entityId, "APPROVED", actor, { provenance, evidence: check.evidence, reason: decision.reason, data: { amount } });
   return { outcome: "APPROVED", decision: { ...decision, amount } };
 }

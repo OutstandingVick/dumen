@@ -197,3 +197,9 @@ footer b { color: var(--ink); }
 @media (prefers-reduced-motion: reduce) {
   .stamp, .attention .pulse { animation: none; }
 }
+
+/* ── Refunds / Payouts switch ────────────────────────────── */
+.switch { display: inline-flex; border: 2px solid var(--ink); border-radius: 999px; padding: 3px; background: #fffdf8; box-shadow: 2px 2px 0 var(--ink); }
+.switch a { padding: 5px 14px; border-radius: 999px; color: var(--muted); font-weight: 700; font-size: 13px; }
+.switch a:hover { text-decoration: none; color: var(--ink); }
+.switch a.on { background: var(--sun); color: var(--ink); }

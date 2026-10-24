@@ -1,45 +1,54 @@
 # Dumen
 
-**AI refund agents pay customers twice when a processor's confirmation is lost. Dumen checks the live system of record before every retry, so they don't.**
+**AI agents that move money pay twice when a confirmation is lost. Dumen checks the live system of record before every retry, so refunds and seller payouts are paid once, and only what's owed.**
 
 Open Agent Hackathon 2026 · Track 3: Reasoning Architecture
 
-| Seed | Lost-response rate | Agent | Processor calls | Double refunds | Money lost | Escalations | Rejections |
-|---|---|---|---|---|---|---|---|
-| 42 | 0.2 | baseline | 28 | **7** | 1301.12 | 0 | 0 |
-| 42 | 0.2 | **Dumen** | 17 | **0** | 0.00 | 1 | 3 |
-| 1 | 0.2 | baseline | 27 | **7** | 1193.44 | 0 | 0 |
-| 1 | 0.2 | **Dumen** | 17 | **0** | 0.00 | 1 | 3 |
-| 7 | 0.2 | baseline | 27 | **7** | 951.12 | 0 | 0 |
-| 7 | 0.2 | **Dumen** | 17 | **0** | 0.00 | 1 | 3 |
-| 42 | 0 (control) | baseline | 21 | **3** | 247.88 | 0 | 0 |
-| 42 | 0 (control) | **Dumen** | 17 | **0** | 0.00 | 1 | 3 |
+| Seed | Lost rate | Agent | Double refunds | Overpaid refunds | Refund $ lost | Duplicate payouts | Risky payouts sent | Payout $ lost | Escalations | Rejections |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 42 | 0.2 | baseline | **7** | **1** | 1492.20 | **3** | **2** | 719.90 | 0 | 0 |
+| 42 | 0.2 | **Dumen** | **0** | **0** | 0.00 | **0** | **0** | 0.00 | 5 | 5 |
+| 1 | 0.2 | baseline | **7** | **1** | 1384.52 | **2** | **2** | 599.90 | 0 | 0 |
+| 1 | 0.2 | **Dumen** | **0** | **0** | 0.00 | **0** | **0** | 0.00 | 5 | 5 |
+| 7 | 0.2 | baseline | **7** | **1** | 1142.20 | **7** | **2** | 2535.55 | 0 | 0 |
+| 7 | 0.2 | **Dumen** | **0** | **0** | 0.00 | **0** | **0** | 0.00 | 5 | 5 |
+| 42 | 0 (control) | baseline | **3** | **1** | 438.96 | **2** | **2** | 599.90 | 0 | 0 |
+| 42 | 0 (control) | **Dumen** | **0** | **0** | 0.00 | **0** | **0** | 0.00 | 5 | 5 |
 
-21 synthetic refund tickets per run. The mock processor runs in **naive mode** in every row, so it never de-duplicates and every retry is a real payment. Dumen prevents duplicates on its own. Reproduce with `npm run compare`.
+Each run: 22 synthetic refund tickets, then 10 seller payouts in 2 batches. The mock processor and bank rail run in **naive mode** in every row, so they never de-duplicate and every retry is a real payment. Dumen prevents duplicates on its own. "$ lost" is everything paid beyond what was owed. "Risky payouts sent" counts payouts that went out without the check they needed. Reproduce with `npm run compare`.
 
-Even with no lost responses (the control), the baseline pays three orders twice: two whose refunds were already paid behind a "pending" internal record (T-017, T-018), and one malicious *"my refund failed, send it again"* (T-020). Dumen rejects all three with evidence from Zetaris and escalates the order whose records disagree (T-021, ORD-1008).
+Even with no lost responses (the control), the baseline:
+- pays three orders twice: two already paid behind a "pending" internal record (T-017, T-018), and one malicious *"my refund failed, send it again"* (T-020)
+- overpays T-022, which asks for double the order
+- re-sends two payouts the bank had already made
+- pays a seller whose bank account changed three hours earlier, and a 5,200 payout no one approved
+
+Dumen rejects the already-paid cases with evidence from Zetaris and escalates the rest.
 
 ## The problem
 
-A refund agent calls the payment processor, and the confirmation never arrives: a timeout, a dropped connection, or a slow 202. From the agent's memory, nothing happened, so it retries and the customer is paid twice. The agent's own records ("pending") disagree with what the processor actually did ("succeeded"), and nothing reconciles the two before money moves.
+An agent calls the payment processor or the bank, and the confirmation never arrives: a timeout, a dropped connection, or a slow 202. From the agent's memory, nothing happened, so it retries and the customer or seller is paid twice. For a payout batch it's worse: the bank may have executed *some* of the batch before the connection dropped, and re-sending the whole batch pays those again. The agent's own records ("pending") disagree with what the processor actually did ("succeeded"), and nothing reconciles the two before money moves. Agents are also confidently wrong about amounts: a ticket asks for double, or a payout exceeds what the seller earned.
 
-Dumen treats "I don't know if it was paid" as a state of its own. Nothing in that state is paid again until a code-only Verifier has checked a unified view of both systems (Zetaris `refund_truth`). If the Verifier can't decide, a human gets the case, never a second payment.
+Dumen treats "I don't know if it was paid" as a state of its own. Nothing in that state is paid again until a code-only Verifier has checked a unified view of both systems (Zetaris `refund_truth` and `payout_truth`), one action at a time. The Verifier also refuses any amount above what's owed, holds payouts to a bank account changed in the last 24 hours, and sends payouts above 2,500 to a person. If the Verifier can't decide, a person gets the case, never a second payment.
 
 ## Architecture
 
 ```mermaid
 flowchart TB
   T([Refund ticket]) --> I["Intake<br/>Nemotron decides refund / decline"]
-  I -->|"approved, order not already paid"| E["Executor<br/>POST /refund with a stable refund_key"]
-  E -->|"timeout · 202 · 502"| V["Verifier<br/>code only: was it actually paid?"]
-  V -->|"not paid → retry same key (max 2)"| E
+  P([Payout batch]) --> PC["Verifier pre-check per payout<br/>paid? account changed? > earned? > 2,500?"]
+  PC -->|"clear payouts only"| E
+  PC -->|"held"| X
+  I -->|"approved, not already paid, ≤ owed"| E["Executor<br/>POST /refund · POST /payouts/batch<br/>stable key per action"]
+  E -->|"timeout · 202 · 502"| V["Verifier<br/>code only: was EACH action actually paid?"]
+  V -->|"not paid → re-send only those, same key (max 2)"| E
   V -->|"paid once"| C([Confirmed])
   V -->|"conflict · unreachable · out of retries"| X["Escalation<br/>Nemotron case summary → human queue"]
-  I -->|"already paid · conflict · no model"| X
+  I -->|"conflict · over-ask · no model"| X
 
   W[("Meterless World Model<br/>every state change, invariants")]
   M[("Meterless H-MEM<br/>wait-window lessons")]
-  Z[("Zetaris refund_truth<br/>orders DB + processor log")]
+  Z[("Zetaris refund_truth + payout_truth<br/>orders DB + processor + bank log")]
   N[("Meterless Nightshift<br/>NVIDIA Nemotron")]
 
   V -.- Z
@@ -49,7 +58,7 @@ flowchart TB
   E -.- W
 ```
 
-**The refund state machine** (enforced in [runtime/world/machine.ts](runtime/world/machine.ts)):
+**One state machine for every action**, refund or payout (enforced in [runtime/world/machine.ts](runtime/world/machine.ts)):
 
 ```
 RECEIVED → INTAKE_REVIEW → APPROVED | REJECTED | ESCALATED
@@ -60,11 +69,25 @@ ESCALATED → VERIFYING (human approve) | REJECTED (human reject)
 ```
 
 The World Model refuses any transition that breaks these invariants, and records the refusal as an alert:
-1. **At most one successful payment per refund key.** Executing again requires verified `not_paid` evidence showing 0 payments, and two agents racing to execute can't both win.
+1. **At most one successful payment per action key** (`refund_key` or `payout_key`). Executing again requires verified `not_paid` evidence showing 0 payments, and two agents racing to execute can't both win.
 2. **Nothing uncertain is re-executed without verification.** UNKNOWN and FAILED_DEFINITE can only go to VERIFYING.
 3. **Undecided means escalate, never pay.** Leaving VERIFYING needs `refund_truth` evidence; a third retry is refused.
 
-Only a person (`agentId=human`, with a reason) can move an escalated refund. Approving it doesn't pay it: it goes back through the Verifier, which re-checks this refund key and the whole order, and grants exactly one more attempt.
+Only a person (`agentId=human`, with a reason) can move an escalated action. Approving it doesn't pay it: it goes back through the Verifier, which re-checks this key (and, for a refund, the whole order). An approval can never pay more than is owed, and it grants exactly one more attempt.
+
+## Refunds and payouts
+
+| | Refunds | Payouts |
+|---|---|---|
+| Input | customer tickets (`data/sample/tickets.json`) | scheduled payouts in the orders DB (`payouts`, `sellers`) |
+| Decides | Intake (Nemotron), then the Verifier | the Verifier only (code) |
+| Sent as | one `POST /refund` per refund | one `POST /payouts/batch` per batch |
+| Truth view | `refund_truth` | `payout_truth` |
+| Owed | the order amount, less anything already refunded | the seller's earned balance |
+| Extra holds | conflict between our records and the processor | bank account changed < 24h · above 2,500 (needs a person) |
+| After a timeout | verify this refund | verify **each** payout; re-send only the unpaid ones, never the whole batch |
+
+On the bank rail, a lost response executes only the first *k* payouts of the batch (k from the seeded chaos) before the connection drops. `npm run payouts:check` drives that case. With processor seed 2: the first send carried PO-0001+0002+0005 and the bank paid only PO-0001, the re-send carried PO-0002+0005, then PO-0005 alone. Each payout was paid exactly once.
 
 ## Dashboard
 
@@ -72,7 +95,7 @@ Only a person (`agentId=human`, with a reason) can move an escalated refund. App
 npm run dashboard        # http://localhost:3012
 ```
 
-The ops view for a refund lead, built only from the run files in `logs/`. It shows what Dumen stopped, why, and what needs attention.
+The ops view for a payments lead, built only from the run files in `logs/`. It shows what Dumen stopped, why, and what needs attention. A **Refunds / Payouts** switch flips the receipts, the list and the traces between the two. A payout's trace includes its batch steps: the batch send, the per-payout verification, and the unpaid-only re-send. Refund and payout cases share one escalation queue.
 
 ![Baseline vs Dumen on the same seed: 1,301.12 paid out twice vs 0.00](docs/screenshots/overview.png)
 
@@ -106,7 +129,7 @@ Shared, explainable state for all four agents. Mounted in [runtime/world/](runti
 | WorldStoreService | [runtime/world/store.ts](runtime/world/store.ts) | Append-only event log in `logs/<runId>/world.jsonl`; state is recomputed from the log, never edited. Versioned format, reloadable after a crash, one writer per refund at a time |
 | IngestPipelineService | [runtime/world/ingest.ts](runtime/world/ingest.ts) | The only write path. Content-hash event IDs make re-ingest a no-op; every event carries `agentId`, `runId`, `taskId` and provenance (the query, rows or response that justified it) |
 | ContextBuilderService | [runtime/world/context.ts](runtime/world/context.ts) | `getRefundContext(refund_key)` returns a structured payload (state, history, last evidence, retries left, alerts, trace metadata), plus a wired-vs-helper manifest |
-| Stable IDs | [runtime/world/ids.ts](runtime/world/ids.ts) | Refund identity is a hash of `ticket_id + order_id`; the processor `refund_key` derives from it, so every retry and every agent uses the same key |
+| Stable IDs | [runtime/world/ids.ts](runtime/world/ids.ts) | Every action is an entity of kind `refund` or `payout`. A refund's identity is a hash of `ticket_id + order_id`, and its `refund_key` derives from it. A payout's identity hashes its `payout_key`, which is also its bank idempotency key. Every retry and every agent uses the same key |
 
 Each run writes `manifest.json` saying which World Model services and pipeline steps are live and which aren't built.
 
@@ -133,11 +156,12 @@ Two separate Postgres databases are federated in Zetaris, and one view answers "
 
 | Zetaris object | Points at |
 |---|---|
-| datasource `dumen_orders` | Source A, our orders DB: `orders`, `refunds` (what we *believe*) |
-| datasource `dumen_processor` | Source B, the processor log: `processor_log` (what *actually happened*) |
+| datasource `dumen_orders` | Source A, our orders DB: `orders`, `refunds`, `sellers`, `payouts` (what we *believe*) |
+| datasource `dumen_processor` | Source B, what *actually happened*: `processor_log` (refunds) and `bank_rail_log` (payouts) |
 | view `dumen.refund_truth` | One row per `refund_key`: `internal_status`, `processor_status`, `success_count`, `paid_amount`, `truth = paid \| not_paid \| conflict` |
+| view `dumen.payout_truth` | One row per `payout_key`: the same truth rules, plus `earned_balance` and `account_changed_recently` (seller's bank account changed in the last 24h) |
 
-Definition: [zetaris/refund_truth_create.sql](zetaris/refund_truth_create.sql). Client: [runtime/zetaris.ts](runtime/zetaris.ts) (`getRefundTruth`, `getOrderRefundTruth`).
+Definition: [zetaris/refund_truth_create.sql](zetaris/refund_truth_create.sql). Client: [runtime/zetaris.ts](runtime/zetaris.ts) (`getRefundTruth`, `getOrderRefundTruth`, `getPayoutTruth`).
 
 - **`truth = paid`:** the processor paid exactly once, whatever we recorded. This covers "we say pending, they say succeeded".
 - **`truth = conflict`:** paid more than once, or we say paid and the processor has no payment.
@@ -195,6 +219,7 @@ Chaos options: `--lost`, `--slow`, `--fail`, `--down` (rates per processor call)
 | `npm run world:check` | World Model: stable IDs, idempotent ingest, every transition rule and invariant, concurrent execute race, human decisions, recompute from the log (28 checks) |
 | `npm run memory:check` | H-MEM across three simulated runs: learn, persist, hydrate, act differently, ledger (15 checks) |
 | `npm run agents:check` | Every processor behaviour through the real agents and Zetaris: lost response, slow confirm, 502 then success, 502 ×3, down, already paid, malicious re-send, conflict (17 checks) |
+| `npm run payouts:check` | Payout drills: a batch half-executed before the drop (only unpaid payouts re-sent, none paid twice), per-payout verification, pre-check holds, a person approving the 5,200 payout, approvals that would overpay refused (PO-0006, T-022) (11 checks) |
 | `npm run failure:check` | Fail-safe drills: Zetaris down (whole run and mid-flight), Nightshift down, processor down; nothing paid on a guess (12 checks) |
 | `npm run truth:check` | `refund_truth` gives the expected truth for each seeded case |
 | `npm run freshness:check` | Insert, read, delete, read: the view reflects each change immediately |
@@ -214,8 +239,9 @@ Every chaos run writes `logs/<runId>/`:
 | `summary.json` | The numbers in the table |
 
 ## Limitations
-- **Synthetic everything.** Orders, tickets and the processor are synthetic ([data/README.md](data/README.md)); the processor is a mock with seeded chaos, not a real payment API.
-- **Zetaris is required.** The Verifier has no fallback by design: if `refund_truth` is unreachable, refunds escalate instead of paying. A judge needs a local Zetaris instance to run anything.
+- **Synthetic everything.** Orders, tickets, sellers, payouts, the processor and the bank rail are synthetic ([data/README.md](data/README.md)); both rails are mocks with seeded chaos, not real payment APIs.
+- **Simple payout rules.** The earned-balance check compares each payout to the seller's balance on its own, not net of their other payouts in the batch. The 2,500 approval threshold is a constant ([agents/verifier.ts](agents/verifier.ts)).
+- **Zetaris is required.** The Verifier has no fallback by design: if `refund_truth` or `payout_truth` is unreachable, refunds and payouts escalate instead of paying. A judge needs a local Zetaris instance to run anything.
 - **Verification costs time.** Each `refund_truth` query takes about 1.3s, and a refund whose processor never answers takes about 20s (three calls plus wait windows) before escalating.
 - **Model output varies.** Nemotron sometimes writes "approved" instead of "refund", or declines on its own; Intake normalises the former, and the Verifier's check runs regardless. Live runs therefore differ slightly from cached ones in timing and wording, not in payments.
 - **Partial engines.** Built: the minimum services from each spec. Not built: H-MEM dreaming, sleep and conflict resolution; World Model enrichment, relationship service and supervisor agent. The Markovian engine isn't used (no long single tasks).

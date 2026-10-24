@@ -1,8 +1,9 @@
 // A person's decision on an escalated refund, written through the World Model.
 //   npx tsx scripts/decide.ts --run <runId> --entity <entityId> --approve --reason "..."
 //   npx tsx scripts/decide.ts --run <runId> --entity <entityId> --reject  --reason "..."
-// Reject ends the refund. Approve goes back through the Verifier (refund_truth for this key
-// and the whole order) and only then the Executor — never a payment without that check.
+// Works for refunds and payouts. Reject ends the action. Approve goes back through the Verifier
+// (refund_truth / payout_truth, and never more than is owed) and only then the Executor —
+// never a payment without that check.
 // Only the newest run can be decided: every chaos run resets the databases.
 // Prints one JSON line: { ok, state, reason }.
 import "dotenv/config";
@@ -97,7 +98,14 @@ const deps = {
   modelSummaries: false,
 };
 try {
-  const v = await verifyHumanApproval(entity!.id, reason, { world, memory, trace, ...deps.verifier });
+  // An approval can never pay more than is owed: for refunds that's the order amount
+  // (payouts read the seller's earned balance from payout_truth).
+  let owed: number | undefined;
+  if (entity!.kind === "refund") {
+    const { rows } = await ordersDb.query("SELECT amount::float AS amount FROM orders WHERE order_id = $1", [entity!.orderId]);
+    owed = rows[0]?.amount;
+  }
+  const v = await verifyHumanApproval(entity!.id, reason, { world, memory, trace, ...deps.verifier }, owed);
   let state: string = v.decision;
   if (v.decision === "RETRY_SAME_KEY") state = await executeUntilSettled(entity!.id, "approved by a person", deps);
   recordDecision(state);

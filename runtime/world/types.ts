@@ -60,12 +60,19 @@ export interface WorldEvent {
 // The fields a caller supplies; the store adds schemaVersion, eventId, seq, ts.
 export type EventInput = Omit<WorldEvent, "schemaVersion" | "eventId" | "seq" | "ts">;
 
-// Canonical refund entity, recomputed from the log.
+export type ActionKind = "refund" | "payout";
+
+// Canonical money-moving action (a refund or a payout), recomputed from the log.
+// refundKey / ticketId / orderId are the refund-flavoured names of actionKey / taskId /
+// subjectId; payouts fill them too so every agent can read any action the same way.
 export interface RefundEntity {
-  id: string; // stable content hash of ticket_id + order_id
-  refundKey: string; // idempotency key sent to the processor; derived from id
-  ticketId: string;
-  orderId: string;
+  id: string; // stable content hash (refund: ticket_id + order_id; payout: payout_key)
+  kind: ActionKind;
+  actionKey: string; // idempotency key sent to the processor or bank rail
+  refundKey: string; // = actionKey
+  ticketId: string; // refund: ticket id; payout: payout_key
+  orderId: string; // refund: order id; payout: seller id
+  batchId: string | null; // payouts only
   amount: number | null;
   currency: string | null;
   state: RefundState;

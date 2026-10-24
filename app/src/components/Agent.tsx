@@ -6,6 +6,7 @@ export const AGENTS: Record<string, { emoji: string; name: string; role: string;
   escalation: { emoji: "🙋", name: "Escalation", role: "hands it to a human · Nemotron", color: "var(--grape)" },
   human: { emoji: "👤", name: "You", role: "approve or reject", color: "var(--ink)" },
   dumen: { emoji: "📥", name: "Dumen", role: "receives the ticket", color: "var(--muted)" },
+  payouts: { emoji: "🏦", name: "Payouts", role: "schedules seller payouts", color: "var(--muted)" },
   baseline: { emoji: "🤖", name: "Baseline", role: "retries from memory", color: "var(--cherry)" },
 };
 
