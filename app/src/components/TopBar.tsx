@@ -3,7 +3,7 @@ import { CompareButton } from "./CompareButton";
 import { RunPicker } from "./RunPicker";
 
 // Page title, run picker and the comparison CTA, shared by every page.
-export function TopBar({ v, section, title, base, notices = true }: { v: View; section: string; title: string; base: string; notices?: boolean }) {
+export function TopBar({ v, section, title, base }: { v: View; section: string; title: string; base: string }) {
   const s = v.run.summary;
   const f = s.failures;
   return (
@@ -17,7 +17,12 @@ export function TopBar({ v, section, title, base, notices = true }: { v: View; s
           </div>
         </div>
         <div className="card compare">
-          <CompareButton key={v.run.info.id} defaultSeed={v.run.info.interactive ? 42 : s.seed} defaultLost={v.run.info.interactive ? 0.2 : s.rates.lost} />
+          <CompareButton
+            key={v.run.info.id}
+            defaultSeed={v.run.info.interactive ? 42 : s.seed}
+            defaultLost={v.run.info.interactive ? 0.2 : s.rates.lost}
+            defaultLive={process.env.DEMO_DEFAULT_LIVE === "true"}
+          />
         </div>
       </div>
       {f?.zetaris_down && (
@@ -29,9 +34,6 @@ export function TopBar({ v, section, title, base, notices = true }: { v: View; s
         <div className="banner bad">
           <b>Nightshift (the model) was unreachable in this run.</b> Intake had no model decision, so those tickets were escalated instead of refunded.
         </div>
-      )}
-      {notices && v.run.info.id !== v.latest && v.openCases.length > 0 && !v.run.info.demo && (
-        <div className="banner info">This is an older run. A later run has reset the databases, so its escalations can be read but not decided.</div>
       )}
     </>
   );

@@ -4,8 +4,8 @@
   "type": "module",
   "scripts": {
     "dev": "next dev -p 3012",
-    "build": "next build",
-    "start": "next start -p 3012",
+    "build": "NEXT_DIST_DIR=.next-prod next build",
+    "start": "NEXT_DIST_DIR=.next-prod next start -p 3012",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

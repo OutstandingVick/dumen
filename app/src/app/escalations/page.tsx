@@ -54,7 +54,7 @@ export default async function Escalations({ searchParams }: { searchParams: Prom
                 {c.decision.verdict === "approve" ? "Approved" : "Rejected"} by a person: “{c.decision.reason}” → {c.decision.outcome}
               </p>
             ) : (
-              entity && <DecisionForm run={run.info.id} entity={entity.key} disabledReason={run.info.id === v.latest ? null : "Decisions are only possible on the newest local run (a later run has reset the databases)."} />
+              entity && <DecisionForm run={run.info.id} entity={entity.key} disabledReason={run.info.id === v.latest ? null : "This is an older run. A later run has reset the databases, so its escalations can be read but not decided. Open the newest run to decide."} />
             )}
           </div>
         );

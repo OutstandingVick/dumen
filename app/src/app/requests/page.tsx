@@ -14,7 +14,7 @@ export default async function Requests({ searchParams }: { searchParams: Promise
   const session = newest?.interactive ? loadRun(newest.id) : null;
   return (
     <>
-      {v && <TopBar v={v} section="New request" title="Put one request through Dumen." base="/requests" notices={false} />}
+      {v && <TopBar v={v} section="New request" title="Put one request through Dumen." base="/requests" />}
       <RequestPanel preset={sp.preset} />
       <div className="card">
         <h3 style={{ marginBottom: 10 }}>This session {session ? <span className="label">· {session.summary.requests?.length ?? 0} requests</span> : null}</h3>

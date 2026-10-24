@@ -20,7 +20,8 @@
     "dashboard": "npm --prefix app install --silent && npm --prefix app run dev",
     "failure:check": "tsx scripts/failure-check.ts",
     "payouts:check": "tsx scripts/payouts-check.ts",
-    "request:check": "tsx scripts/request-check.ts"
+    "request:check": "tsx scripts/request-check.ts",
+    "dashboard:prod": "npm --prefix app install --silent && npm --prefix app run build && npm --prefix app run start"
   },
   "license": "MIT",
   "dependencies": {

@@ -21,11 +21,30 @@ interface Progress {
 // Starts baseline vs Dumen on one seed (scripts/compare.ts), shows where it is, then opens
 // the new Dumen run. Cached replays saved Nemotron intake decisions (fast, reproducible);
 // Live has Dumen decide on live Nemotron.
-export function CompareButton({ defaultSeed, defaultLost }: { defaultSeed: number; defaultLost: number }) {
+const MODE_KEY = "dumen.compare.mode"; // "live" | "cached", remembered per browser
+
+export function CompareButton({ defaultSeed, defaultLost, defaultLive = false }: { defaultSeed: number; defaultLost: number; defaultLive?: boolean }) {
   const router = useRouter();
   const [seed, setSeed] = useState(String(defaultSeed));
   const [lost, setLost] = useState(String(defaultLost));
-  const [live, setLive] = useState(false);
+  // Server default (DEMO_DEFAULT_LIVE) first; a choice made in this browser wins after that.
+  const [live, setLiveState] = useState(defaultLive);
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(MODE_KEY);
+      if (saved === "live" || saved === "cached") setLiveState(saved === "live");
+    } catch {
+      // storage blocked (private mode): keep the default
+    }
+  }, []);
+  const setLive = (v: boolean) => {
+    setLiveState(v);
+    try {
+      localStorage.setItem(MODE_KEY, v ? "live" : "cached");
+    } catch {
+      // storage blocked: the choice lasts for this page only
+    }
+  };
   const [job, setJob] = useState<Job | null>(null);
   const [progress, setProgress] = useState<Progress | null>(null);
   const [error, setError] = useState<string | null>(null);

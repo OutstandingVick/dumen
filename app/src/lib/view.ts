@@ -70,13 +70,18 @@ function chartRows(run: Run, baseline: Run | null, dumen: Run | null): ChartRow[
 export function getView(sp: SearchParams) {
   const runs = listRuns();
   if (!runs.length) return null;
+  // Open on the newest local run: it's the only one whose escalations can still be decided.
+  // A fresh clone has no local runs, so it falls back to the committed demo's Dumen run.
   const defaultRun =
-    runs.find((r) => r.agent === "dumen" && !drill(r) && !r.interactive && !!r.summary?.payouts) ??
-    runs.find((r) => r.agent === "dumen" && !drill(r)) ??
+    runs.find((r) => !r.demo) ??
+    runs.find((r) => r.agent === "dumen" && !drill(r) && !!r.summary?.payouts) ??
     runs.find((r) => r.agent === "dumen") ??
     runs[0];
   const run = loadRun(sp.run ?? defaultRun.id) ?? loadRun(defaultRun.id)!;
-  const pair = pairFor(run.info);
+  // An interactive session has no baseline twin; the comparison cards then show the newest
+  // chaos run that does.
+  const compareInfo = run.info.interactive ? (runs.find((r) => !r.interactive && !drill(r) && !r.demo) ?? runs.find((r) => !r.interactive && !drill(r)) ?? run.info) : run.info;
+  const pair = pairFor(compareInfo);
   const baseline = pair.baseline ? loadRun(pair.baseline.id) : null;
   const dumen = pair.dumen ? loadRun(pair.dumen.id) : null;
   const other = run.info.agent === "dumen" ? baseline : dumen;

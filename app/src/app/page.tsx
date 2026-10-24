@@ -9,6 +9,7 @@ import { getView, money, type SearchParams, type View } from "@/lib/view";
 
 export const dynamic = "force-dynamic";
 
+const money0 = (n: number) => Math.round(n).toLocaleString("en-US");
 const lostOf = (r: Run) => r.summary.money_lost + (r.summary.payouts?.money_lost ?? 0);
 const twiceOf = (r: Run) => r.summary.double_refunds + (r.summary.payouts?.duplicate_payouts ?? 0);
 const riskyOf = (r: Run) => {
@@ -156,17 +157,19 @@ npm run compare`}</pre>
         <AgentCard v={v} run={dumen} agent="dumen" />
 
         <div className="card dark route">
-          <svg className="map" viewBox="0 0 300 520" preserveAspectRatio="xMidYMid slice" aria-hidden>
-            {[
-              [20, 40, 60, 90], [100, 20, 50, 70], [190, 50, 80, 60], [30, 160, 70, 60], [200, 140, 70, 90],
-              [20, 260, 60, 80], [210, 270, 70, 60], [40, 380, 60, 50], [200, 360, 80, 70], [110, 110, 40, 40],
-            ].map(([x, y, w, h], i) => (
-              <rect key={i} x={x} y={y} width={w} height={h} rx="4" fill="rgba(255,255,255,0.06)" stroke="rgba(255,255,255,0.10)" />
-            ))}
-            <path d="M150 520 L150 400 Q150 360 175 330 L180 250 Q185 200 165 160 L160 0" fill="none" stroke="#ff6a1a" strokeWidth="10" strokeLinecap="round" opacity="0.9" />
-          </svg>
-          <div className="pin">
-            <Icon name="shield" size={18} />
+          {/* The map lives in its own band; the route ends at the pin, above the text. */}
+          <div className="routemap" aria-hidden>
+            <svg className="map" viewBox="0 0 300 240" preserveAspectRatio="xMidYMid slice">
+              {[
+                [18, 20, 64, 70], [96, 8, 52, 56], [190, 24, 80, 58], [28, 120, 66, 60], [200, 110, 74, 70], [104, 96, 40, 40], [226, 196, 56, 40], [20, 200, 60, 36],
+              ].map(([x, y, w, h], i) => (
+                <rect key={i} x={x} y={y} width={w} height={h} rx="4" fill="rgba(255,255,255,0.06)" stroke="rgba(255,255,255,0.10)" />
+              ))}
+              <path d="M160 0 Q172 50 168 90 Q162 140 176 170 Q186 196 150 222" fill="none" stroke="#ff6a1a" strokeWidth="9" strokeLinecap="round" />
+            </svg>
+            <div className="pin">
+              <Icon name="shield" size={18} />
+            </div>
           </div>
           <div className="big">{dumenTwice}</div>
           <div className="sub">times Dumen paid twice in this run</div>
@@ -199,35 +202,32 @@ npm run compare`}</pre>
             </h3>
             <div className="legend">
               <span>
-                <i style={{ border: "1px solid var(--ink)" }} />
-                baseline
+                <i className="sw-base" />
+                Baseline
               </span>
               <span>
-                <i style={{ background: "var(--orange)" }} />
+                <i className="sw-dumen" />
                 Dumen
               </span>
             </div>
           </div>
           <span className="hint">Refunds + payouts paid beyond what was owed</span>
-          <div className="chart">
-            {chart.flatMap((c) => [
-              <div key={`b${c.seed}${c.lost}`} className="col">
-                <div className="bar" style={{ height: `${Math.max(14, (c.baseline / maxLost) * 100)}%` }}>
-                  {Math.round(c.baseline)}
+          <div className="groups">
+            {chart.map((c) => (
+              <div key={`${c.seed}-${c.lost}`} className="group">
+                <div className="pair">
+                  <div className="col">
+                    <span className="val">{money0(c.baseline)}</span>
+                    <div className="bar base" style={{ height: `max(3px, calc((100% - 22px) * ${c.baseline / maxLost}))` }} />
+                  </div>
+                  <div className="col">
+                    <span className="val dumen">{money0(c.dumen)}</span>
+                    <div className="bar dumen" style={{ height: `max(3px, calc((100% - 22px) * ${c.dumen / maxLost}))` }} />
+                  </div>
                 </div>
-              </div>,
-              <div key={`d${c.seed}${c.lost}`} className="col">
-                <div className={`bar ${c.dumen ? "" : "zero"}`} style={c.dumen ? { height: `${(c.dumen / maxLost) * 100}%` } : undefined}>
-                  {Math.round(c.dumen)}
-                </div>
-              </div>,
-            ])}
-          </div>
-          <div className="chart-axis">
-            {chart.flatMap((c) => [
-              <span key={`ab${c.seed}${c.lost}`}>s{c.seed}</span>,
-              <span key={`ad${c.seed}${c.lost}`}>{c.lost === 0 ? "ctrl" : `·${String(c.lost).replace("0.", ".")}`}</span>,
-            ])}
+                <span className="glabel">{c.lost === 0 ? "No loss" : `Seed ${c.seed}`}</span>
+              </div>
+            ))}
           </div>
         </div>
 

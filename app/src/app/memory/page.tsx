@@ -10,7 +10,7 @@ export default async function Memory({ searchParams }: { searchParams: Promise<S
   const services = (run.manifest?.world?.services ?? {}) as Record<string, string>;
   return (
     <>
-      <TopBar v={v} section="Memory" title="What Dumen learned, and used." base="/memory" notices={false} />
+      <TopBar v={v} section="Memory" title="What Dumen learned, and used." base="/memory" />
       <div className="cols2">
         <div className="card">
           <h3 style={{ marginBottom: 6 }}>H-MEM lessons</h3>
