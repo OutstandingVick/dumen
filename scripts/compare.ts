@@ -88,9 +88,13 @@ async function decideAll(): Promise<string> {
   return file;
 }
 
+// Comparison runs use shorter waits than chaos.ts defaults (3s call timeout, 2–8s verify):
+// the chaos is seeded per call and has no slow confirms here, so what fails is unchanged.
+const TIMING = ["--call-timeout-ms", "1000", "--verify-wait-ms", "800", "--verify-max-ms", "3000"];
+
 async function runChaos(agent: "baseline" | "dumen", seed: string, lost: string, intakeFile: string | null): Promise<Result> {
   const intake = intakeFile ? ["--intake-file", intakeFile] : ["--cached-intake"];
-  const extra = [...intake, ...(agent === "dumen" ? ["--fresh-memory", "--concurrency", "1"] : [])];
+  const extra = [...intake, ...TIMING, ...(agent === "dumen" ? ["--fresh-memory", "--concurrency", "1"] : [])];
   // Live: Nemotron writes the escalation summaries (and decides any ticket it failed on up front).
   const out = await runScript("scripts/chaos.ts", ["--agent", agent, "--seed", seed, "--lost", lost, "--quiet", ...extra], { SAMPLE_MODE: intakeFile ? "false" : "true" }, { agent });
   const line = out.split("\n").find((l) => l.startsWith("@@RESULT "));

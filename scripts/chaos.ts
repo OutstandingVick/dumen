@@ -41,6 +41,9 @@ const { values: args } = parseArgs({
     port: { type: "string", default: "4010" },
     "call-timeout-ms": { type: "string", default: "3000" },
     concurrency: { type: "string" },
+    // How long the Verifier waits for refund_truth to settle after an uncertain call.
+    "verify-wait-ms": { type: "string", default: "2000" },
+    "verify-max-ms": { type: "string", default: "8000" },
     "cached-intake": { type: "boolean", default: false },
     "save-intake": { type: "boolean", default: false },
     "intake-file": { type: "string" }, // decisions made up front (compare --live); both agents use them
@@ -58,6 +61,7 @@ if (args.agent !== "baseline" && args.agent !== "dumen") throw new Error(`unknow
 const PORT = Number(args.port);
 const CALL_TIMEOUT_MS = Number(args["call-timeout-ms"]);
 const SLOW_MS = 1500;
+const VERIFIER = { defaultWaitMs: Number(args["verify-wait-ms"]), maxWaitMs: Number(args["verify-max-ms"]), pollMs: 300 };
 const HANG_MS = CALL_TIMEOUT_MS + 2000; // processor hangs longer than the agent waits
 const CONCURRENCY = Number(args.concurrency ?? (args.agent === "dumen" ? 4 : 1));
 const SAMPLE_MODE = process.env.SAMPLE_MODE === "true" && !args["nightshift-down"];
@@ -206,7 +210,7 @@ try {
         ordersDb,
         processorUrl: `http://127.0.0.1:${PORT}`,
         callTimeoutMs: CALL_TIMEOUT_MS,
-        verifier: { defaultWaitMs: 2000, maxWaitMs: 8000, pollMs: 300 },
+        verifier: VERIFIER,
         cachedIntake,
         modelSummaries,
         deferSummaries: modelSummaries,
@@ -228,7 +232,7 @@ try {
         ordersDb,
         processorUrl: `http://127.0.0.1:${PORT}`,
         callTimeoutMs: CALL_TIMEOUT_MS,
-        verifier: { defaultWaitMs: 2000, maxWaitMs: 8000, pollMs: 300 },
+        verifier: VERIFIER,
         modelSummaries,
         deferSummaries: modelSummaries,
         onVerify,
@@ -265,7 +269,7 @@ try {
   }
 
   // slow_confirm writes its log row late; let those land before reading the truth.
-  await new Promise((r) => setTimeout(r, SLOW_MS + 1000));
+  if (Number(args.slow) > 0) await new Promise((r) => setTimeout(r, SLOW_MS + 1000));
   stopProcessor();
   if (args["zetaris-down"]) {
     process.env.ZETARIS_URL = zetarisUrl;
