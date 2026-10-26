@@ -79,20 +79,30 @@ export async function runIntake(ticket: Ticket, entityId: string, deps: IntakeDe
   const actor = { agentId: AGENT, taskId: ticket.ticket_id };
   await world.ingest.transition(entityId, "INTAKE_REVIEW", actor, { provenance: { source: "ticket", rows: [ticket] } });
 
-  // 1. The model's opinion.
+  // 1. The model's opinion and the system of record's facts, asked at the same time. Facts
+  //    about money come from refund_truth, never from the model, so when the Verifier alone
+  //    settles the ticket (already paid, conflict, unreachable, over-ask) nobody waits for it.
   let decision: IntakeDecision | null = deps.cached ?? null;
   let raw = "";
+  let pending: Promise<{ decision: IntakeDecision | null; raw: string }> | null = null;
   if (!decision) {
     // Only intake lessons: processor-timing lessons belong to the Verifier and mislead the model.
     const mem = deps.memory.retrieval.retrieve({ text: ticket.message, tags: ["intake"], entities: [ticket.order_id], agentId: AGENT, strategy: "minimal", namespacePrefix: "refund-ops/intake" });
-    ({ decision, raw } = await decideIntake(ticket, deps.order, mem.memories.map((m) => m.content)));
+    pending = decideIntake(ticket, deps.order, mem.memories.map((m) => m.content));
   }
-  trace.write({ agent: AGENT, ticket_id: ticket.ticket_id, action: "decide", input: { cached: !!deps.cached }, output: decision ?? { raw: raw.slice(0, 500) }, reason: decision?.reason ?? "no usable model decision" });
+  const modelDecision = async () => {
+    if (pending) ({ decision, raw } = await pending);
+    trace.write({ agent: AGENT, ticket_id: ticket.ticket_id, action: "decide", input: { cached: !!deps.cached }, output: decision ?? { raw: raw.slice(0, 500) }, reason: decision?.reason ?? "no usable model decision" });
+  };
+  const skipModel = (why: string) => {
+    if (pending) trace.write({ agent: AGENT, ticket_id: ticket.ticket_id, action: "decide", input: { cached: false }, output: { skipped: true }, reason: `not needed: ${why}` });
+    else trace.write({ agent: AGENT, ticket_id: ticket.ticket_id, action: "decide", input: { cached: true }, output: decision, reason: decision?.reason ?? "no usable model decision" });
+  };
 
-  // 2. Always ask the Verifier what the system of record says about this order — whatever
-  //    the model decided. Facts about money come from refund_truth, not from the model.
+  // 2. Always ask the Verifier what the system of record says about this order.
   const check = await checkOrderBeforeIntake(ticket.order_id, ticket.ticket_id, deps.verifier);
   const provenance = { source: "zetaris" as const, query: `SELECT * FROM dumen.refund_truth WHERE order_id = '${ticket.order_id}'`, rows: "rows" in check ? check.rows : [] };
+  if (check.verdict !== "clear") skipModel(`the Verifier settled it (${check.verdict})`);
 
   if (check.verdict === "already_paid") {
     const reason = `order ${ticket.order_id} already refunded: ${check.evidence.success_count} processor payment(s) totalling ${check.evidence.paid_amount}`;
@@ -112,6 +122,7 @@ export async function runIntake(ticket: Ticket, entityId: string, deps: IntakeDe
   const owed = Math.max(0, deps.order.amount - check.evidence.paid_amount);
   const asked = checkAmountOwed(ticket.ticket_id, "refund", ticket.amount_requested, owed, deps.verifier);
   if (!asked.ok) {
+    skipModel("the customer asks for more than is owed");
     const reason = `customer ${asked.reason}`;
     await world.ingest.transition(entityId, "ESCALATED", actor, { provenance, evidence: check.evidence, reason, data: { requested: ticket.amount_requested, owed, model: decision } });
     trace.write({ agent: AGENT, ticket_id: ticket.ticket_id, action: "verifier→escalation: requested_over_owed", input: provenance, output: { requested: ticket.amount_requested, owed, model: decision }, reason });
@@ -119,6 +130,7 @@ export async function runIntake(ticket: Ticket, entityId: string, deps: IntakeDe
   }
 
   // 4. The order is clear and the ask is within what's owed; now the model's decision matters.
+  await modelDecision();
   if (!decision) {
     await world.ingest.transition(entityId, "ESCALATED", actor, { provenance: { source: "intake", response: raw.slice(0, 500) }, evidence: check.evidence, reason: raw.startsWith("generator error") ? `model unavailable (${raw.slice("generator error: ".length)}); no model decision = no refund` : "model gave no usable decision" });
     return { outcome: "ESCALATED", decision };

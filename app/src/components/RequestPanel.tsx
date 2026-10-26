@@ -20,6 +20,7 @@ const CHAOS: Array<{ id: Chaos; label: string; hint: string }> = [
 interface Job {
   id: string;
   status: "running" | "done" | "failed";
+  final?: boolean;
   run?: string;
   entity?: string;
   result?: { ok: boolean; state?: string; executions?: number; success_count?: number | null; paid_amount?: number | null; reason?: string; id?: string };
@@ -94,20 +95,29 @@ export function RequestPanel({ preset, orders }: { preset?: string; orders: Orde
   const [timeline, setTimeline] = useState<TimelineItem[]>([]);
   const [error, setError] = useState<string | null>(null);
 
+  // Polls the job: the trace streams in while it runs, the result shows as soon as Dumen has
+  // decided, and polling continues until it's checked against Zetaris (job.final).
+  const jobId = job?.id;
+  const active = !!job && !job.final && job.status !== "failed";
   useEffect(() => {
-    if (!job || job.status !== "running") return;
+    if (!jobId || !active) return;
+    let shown = false;
     const t = setInterval(async () => {
-      const res = await fetch(`/api/jobs/${job.id}`, { cache: "no-store" });
+      const res = await fetch(`/api/jobs/${jobId}`, { cache: "no-store" });
       const body = await res.json();
       setJob(body.job);
       if (body.timeline) setTimeline(body.timeline);
-      if (body.job.status !== "running") {
+      if (body.job.status !== "running" && !shown) {
+        shown = true;
+        router.refresh();
+      }
+      if (body.job.final || body.job.status === "failed") {
         clearInterval(t);
         router.refresh();
       }
-    }, 700);
+    }, 300);
     return () => clearInterval(t);
-  }, [job, router]);
+  }, [jobId, active, router]);
 
   async function process() {
     setError(null);

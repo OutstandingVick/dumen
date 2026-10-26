@@ -25,9 +25,12 @@ export type Generator = (
 const TIMEOUT_MS = Number(process.env.NIGHTSHIFT_TIMEOUT_MS ?? 30_000);
 
 let client: OpenAI | null = null;
+let clientUrl: string | undefined;
 
 function getClient(): OpenAI {
-  if (!client) {
+  // Rebuilt when the endpoint changes (the request worker's Nightshift-down drill).
+  if (!client || clientUrl !== process.env.NIGHTSHIFT_BASE_URL) {
+    clientUrl = process.env.NIGHTSHIFT_BASE_URL;
     const baseURL = process.env.NIGHTSHIFT_BASE_URL;
     const apiKey = process.env.NIGHTSHIFT_API_KEY;
     if (!baseURL || !apiKey) {
@@ -56,6 +59,10 @@ function withAttachments(prompt: string, attachments?: Attachment[] | null): str
   return `${prompt}\n\n${blocks.join("\n\n")}`;
 }
 
+// NIGHTSHIFT_NO_THINKING=true: Nemotron answers without its reasoning pass (about 3s instead of
+// 10–14s). The dashboard's request worker uses it so one request returns while you watch.
+const thinking = () => (process.env.NIGHTSHIFT_NO_THINKING === "true" ? { chat_template_kwargs: { enable_thinking: false } } : {});
+
 export const generator: Generator = async (prompt, attachments, systemPrompt, onStream, abortSignal) => {
   const fullPrompt = withAttachments(prompt, attachments);
   if (process.env.SAMPLE_MODE === "true") {
@@ -73,7 +80,7 @@ export const generator: Generator = async (prompt, attachments, systemPrompt, on
   ];
 
   if (onStream) {
-    const stream = await getClient().chat.completions.create({ model, messages, stream: true }, { signal });
+    const stream = (await getClient().chat.completions.create({ model, messages, stream: true, ...thinking() } as any, { signal })) as unknown as AsyncIterable<any>;
     let text = "";
     for await (const chunk of stream) {
       const delta = chunk.choices[0]?.delta?.content ?? "";
@@ -86,7 +93,7 @@ export const generator: Generator = async (prompt, attachments, systemPrompt, on
     return { text };
   }
 
-  const res = await getClient().chat.completions.create({ model, messages }, { signal });
+  const res = await getClient().chat.completions.create({ model, messages, ...thinking() } as any, { signal });
   markWarm();
   return { text: res.choices[0]?.message?.content ?? "" };
 };

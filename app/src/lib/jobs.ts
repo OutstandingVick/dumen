@@ -21,6 +21,7 @@ export interface Job {
   startedAt: string;
   finishedAt?: string;
   exitCode?: number | null;
+  final?: boolean; // request: checked against Zetaris after the result was shown
 }
 
 function save(job: Job) {
@@ -88,14 +89,40 @@ export interface RequestParams {
   nightshiftDown: boolean;
 }
 
-// One request through the real Dumen loop (scripts/request.ts). The runner announces its
-// run and action id early, so the dashboard can follow the World Model events live.
+// One request through the real Dumen loop, sent to the warm request worker
+// (scripts/request-worker.ts), which streams @@RUN / @@ENTITY / @@RESULT / @@DONE lines. The job
+// is "done" at @@RESULT, as soon as Dumen has decided; `final` is set once the result has been
+// checked against Zetaris (@@DONE).
+const WORKER = "http://127.0.0.1:4019";
+const g = globalThis as { dumenWorker?: Promise<void> };
+
+async function workerUp(): Promise<boolean> {
+  try {
+    return (await fetch(`${WORKER}/health`, { signal: AbortSignal.timeout(500) })).ok;
+  } catch {
+    return false;
+  }
+}
+
+// Started once per dashboard server and kept running; a crashed worker is started again.
+function ensureWorker(): Promise<void> {
+  g.dumenWorker ??= (async () => {
+    if (await workerUp()) return;
+    const p = spawn("npx", ["tsx", "scripts/request-worker.ts"], { cwd: ROOT, stdio: "ignore" });
+    p.on("exit", () => (g.dumenWorker = undefined));
+    for (let i = 0; i < 150; i++) {
+      if (await workerUp()) return;
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    throw new Error("request worker did not start within 30s");
+  })().catch((e) => {
+    g.dumenWorker = undefined;
+    throw e;
+  });
+  return g.dumenWorker;
+}
+
 export function startRequest(r: RequestParams): Job {
-  const argv = ["--kind", r.kind, "--chaos", r.chaos];
-  if (r.kind === "refund") argv.push("--order", r.order!, "--message", r.message!);
-  else argv.push("--seller", r.seller!, "--amount", String(r.amount));
-  if (r.zetarisDown) argv.push("--zetaris-down");
-  if (r.nightshiftDown) argv.push("--nightshift-down");
   const job: Job = {
     id: `request-${Date.now()}`,
     kind: "request",
@@ -104,17 +131,51 @@ export function startRequest(r: RequestParams): Job {
     log: "",
     startedAt: new Date().toISOString(),
   };
-  return runJob(job, "scripts/request.ts", argv, (line) => {
+  save(job);
+  const finish = (status: Job["status"]) => {
+    job.final = true;
+    if (job.status === "running") job.status = status;
+    job.finishedAt ??= new Date().toISOString();
+    save(job);
+  };
+  const onLine = (line: string) => {
+    job.log += line + "\n";
     if (line.startsWith("@@RUN ")) job.run = line.slice(6).trim();
     else if (line.startsWith("@@ENTITY ")) job.entity = line.slice(9).trim();
-    else if (line.startsWith("@@DONE ")) {
+    else if (line.startsWith("@@RESULT ") || line.startsWith("@@DONE ")) {
       try {
-        job.result = JSON.parse(line.slice(7));
+        job.result = JSON.parse(line.slice(line.indexOf(" ") + 1));
       } catch {
         // keep the raw log
       }
+      if (line.startsWith("@@RESULT ")) {
+        job.status = "done";
+        job.finishedAt = new Date().toISOString();
+      } else finish(job.result?.ok === false ? "failed" : "done");
     }
+    save(job);
+  };
+  (async () => {
+    await ensureWorker();
+    const res = await fetch(`${WORKER}/request`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(r), signal: AbortSignal.timeout(MAX_MS) });
+    const reader = res.body!.getReader();
+    const decoder = new TextDecoder();
+    let pending = "";
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      pending += decoder.decode(value, { stream: true });
+      const lines = pending.split("\n");
+      pending = lines.pop() ?? "";
+      lines.forEach(onLine);
+    }
+    if (pending) onLine(pending);
+    if (!job.final) finish("failed");
+  })().catch((e) => {
+    job.log += `request worker: ${e.message}\n`;
+    finish("failed");
   });
+  return job;
 }
 
 export function runDecide(run: string, entity: string, verdict: "approve" | "reject", reason: string): Promise<{ ok: boolean; state: string | null; reason: string }> {

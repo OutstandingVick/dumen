@@ -218,6 +218,13 @@ const server = createServer(async (req, res) => {
     const m = url.pathname.match(/^\/refunds\/([^/]+)$/);
     if (req.method === "GET" && m) return await handleGet(res, decodeURIComponent(m[1]));
     if (req.method === "POST" && url.pathname === "/payouts/batch") return await handlePayoutBatch(req, res);
+    // A long-lived processor (the dashboard's request worker) takes each request's chaos here.
+    if (req.method === "POST" && url.pathname === "/_chaos/next") {
+      const b = (await readJson(req)).behaviour;
+      if (!BEHAVIOURS.includes(b)) return send(res, 400, { error: `behaviour must be one of ${BEHAVIOURS.join(", ")}` });
+      forced = b === "ok" ? null : b;
+      return send(res, 200, { next: b });
+    }
     const pm = url.pathname.match(/^\/payouts\/([^/]+)$/);
     if (req.method === "GET" && pm) return await handleGetPayout(res, decodeURIComponent(pm[1]));
     send(res, 404, { error: "not found" });
