@@ -5,7 +5,7 @@ import { Sidebar } from "@/components/Sidebar";
 import { getView } from "@/lib/view";
 import "./globals.css";
 
-const sans = Inter_Tight({ subsets: ["latin"], variable: "--font-sans", weight: ["300", "400", "500", "600"] });
+const sans = Inter_Tight({ subsets: ["latin"], variable: "--font-sans", weight: ["300", "400", "500", "600", "700"] });
 const mono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-mono", weight: ["400", "500"] });
 
 export const metadata: Metadata = {

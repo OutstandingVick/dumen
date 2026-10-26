@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/brand/dumen-logo.png" alt="dumen" width="520"></p>
+
 # Dumen
 
 **AI agents that move money pay twice when a confirmation is lost. Dumen checks the live system of record before every retry, so refunds and seller payouts are paid once, and only what's owed.**

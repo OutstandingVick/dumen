@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { BeeMark } from "./BeeMark";
+import { Logo } from "./BeeMark";
 import { Icon } from "./Icon";
 
 const NAV = [
@@ -26,11 +26,8 @@ export function Sidebar({ waiting }: { waiting: number }) {
   return (
     <aside className="sidebar">
       <div className="brand">
-        <BeeMark size={34} />
-        <div>
-          <b>Dumen</b>
-          <small>refund &amp; payout control room</small>
-        </div>
+        <Logo size={36} />
+        <small>refund &amp; payout control room</small>
       </div>
       <nav className="nav">
         {NAV.map((n) => (

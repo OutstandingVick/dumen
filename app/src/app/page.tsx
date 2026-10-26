@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Crew } from "@/components/Agent";
-import { BeeMark } from "@/components/BeeMark";
+import { Logo } from "@/components/BeeMark";
 import { CountUp } from "@/components/CountUp";
 import { Icon, IconBox } from "@/components/Icon";
 import { TopBar } from "@/components/TopBar";
@@ -119,7 +119,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
   if (!v) {
     return (
       <div className="card empty">
-        <BeeMark size={56} />
+        <Logo size={64} />
         <h1 style={{ margin: "10px 0 6px" }}>No runs yet.</h1>
         <p className="hint">Create one from the repo folder:</p>
         <pre>{`docker compose up -d --wait

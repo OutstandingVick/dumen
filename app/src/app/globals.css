@@ -34,8 +34,9 @@ h1, h2, h3 { font-weight: 400; letter-spacing: -0.02em; margin: 0; }
 /* ── App frame: sidebar + main ───────────────────────────── */
 .app { display: grid; grid-template-columns: 236px minmax(0, 1fr); gap: 12px; padding: 12px; min-height: 100vh; }
 .sidebar { position: sticky; top: 12px; align-self: start; height: calc(100vh - 24px); background: var(--card); border-radius: var(--radius); padding: 20px 14px; display: flex; flex-direction: column; gap: 22px; }
-.brand { display: flex; align-items: center; gap: 10px; padding: 0 6px; }
-.brand b { display: block; font-size: 20px; font-weight: 500; letter-spacing: -0.02em; }
+.brand { display: grid; gap: 6px; padding: 0 6px; }
+.logo-lockup { display: inline-flex; align-items: center; }
+.wordmark { font-family: var(--sans); font-weight: 700; letter-spacing: -0.045em; line-height: 1; color: var(--ink); }
 .brand small { display: block; font-family: var(--mono); font-size: 12px; letter-spacing: 0.01em; color: var(--muted); line-height: 1.25; }
 .nav { display: grid; gap: 4px; }
 .nav a { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 12px; text-decoration: none; color: var(--ink-2); font-size: 14.5px; }
