@@ -7,6 +7,7 @@ import { DEMO, LOGS, latestRunId, lessonsOf, listRuns, loadRun, pairFor, refunds
 export interface SearchParams {
   run?: string;
   refund?: string;
+  ticket?: string;
   kind?: string;
 }
 
@@ -88,7 +89,9 @@ export function getView(sp: SearchParams) {
   const kind: Kind = sp.kind === "payout" ? "payout" : "refund";
   const refunds = refundsOf(run, kind);
   const otherRefunds = other && !run.info.interactive ? refundsOf(other, kind) : [];
-  const selectedKey = sp.refund && refunds.some((r) => r.key === sp.refund) ? sp.refund : pickDefault(refunds, otherRefunds);
+  // ?ticket=T-005 (or a payout id) is the linkable form; ?refund=<key> still works for old links.
+  const asked = sp.ticket ? refunds.find((r) => r.ticketId === sp.ticket || r.key === sp.ticket) : refunds.find((r) => r.key === sp.refund);
+  const selectedKey = asked?.key ?? pickDefault(refunds, otherRefunds);
   const selected = refunds.find((r) => r.key === selectedKey);
   return {
     runs,

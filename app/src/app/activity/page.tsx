@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Badge } from "@/components/Badge";
+import { RowLink, TraceTop } from "@/components/RowLink";
 import { SessionTable } from "@/components/SessionTable";
 import { Timeline } from "@/components/Timeline";
 import { TopBar } from "@/components/TopBar";
@@ -59,10 +60,11 @@ export default async function Activity({ searchParams }: { searchParams: Promise
               <tbody>
                 {refunds.map((r) => {
                   const o = otherRefunds.find((x) => x.ticketId === r.ticketId);
+                  const href = `/activity?run=${run.info.id}&kind=${kind}&ticket=${encodeURIComponent(r.ticketId)}`;
                   return (
-                    <tr key={r.key} className={r.key === selectedKey ? "sel" : ""}>
+                    <RowLink key={r.key} href={href} selected={r.key === selectedKey}>
                       <td>
-                        <Link href={`/activity?run=${run.info.id}&kind=${kind}&refund=${r.key}#trace`} scroll={false}>
+                        <Link href={href} scroll={false} tabIndex={-1}>
                           {r.ticketId}
                         </Link>
                       </td>
@@ -73,7 +75,7 @@ export default async function Activity({ searchParams }: { searchParams: Promise
                         <Badge r={r} />
                       </td>
                       {other && <td>{o ? <Badge r={o} /> : <span className="hint">—</span>}</td>}
-                    </tr>
+                    </RowLink>
                   );
                 })}
               </tbody>
@@ -83,6 +85,7 @@ export default async function Activity({ searchParams }: { searchParams: Promise
         </div>
 
         <div className="card" id="trace">
+          <TraceTop id={selectedKey ?? ""} />
           <h3>Trace {selected ? <span className="label">· {selected.ticketId} ({selected.orderId})</span> : null}</h3>
           {selected ? (
             <>

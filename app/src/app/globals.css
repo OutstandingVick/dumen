@@ -169,6 +169,9 @@ td { padding: 10px; border-bottom: 1px solid var(--line); vertical-align: middle
 td:first-child { font-family: var(--mono); font-size: 13px; }
 td:nth-child(-n + 2) { white-space: nowrap; }
 tr:hover td { background: rgba(255, 255, 255, 0.55); }
+tr.rowlink { cursor: pointer; }
+tr.rowlink:hover td { background: rgba(255,255,255,0.6); }
+tr.rowlink:focus-visible { outline: 2px solid var(--orange); outline-offset: -2px; }
 tr.sel td { background: #fff; }
 tr.sel td:first-child { box-shadow: inset 3px 0 0 var(--orange); }
 td a { text-decoration: none; }

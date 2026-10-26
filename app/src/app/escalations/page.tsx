@@ -32,7 +32,7 @@ export default async function Escalations({ searchParams }: { searchParams: Prom
               <div className="row">
                 <span className="badge b-escalated">{c.decision ? `decided: ${c.decision.outcome ?? c.decision.verdict}` : "needs decision"}</span>
                 {entity && (
-                  <Link className="chip" href={`/activity?run=${run.info.id}&kind=${ck}&refund=${entity.key}#trace`}>
+                  <Link className="chip" href={`/activity?run=${run.info.id}&kind=${ck}&ticket=${encodeURIComponent(entity.ticketId)}`}>
                     Trace
                   </Link>
                 )}
