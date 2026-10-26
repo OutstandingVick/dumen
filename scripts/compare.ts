@@ -94,7 +94,7 @@ const TIMING = ["--call-timeout-ms", "1000", "--verify-wait-ms", "800", "--verif
 
 async function runChaos(agent: "baseline" | "dumen", seed: string, lost: string, intakeFile: string | null): Promise<Result> {
   const intake = intakeFile ? ["--intake-file", intakeFile] : ["--cached-intake"];
-  const extra = [...intake, ...TIMING, ...(agent === "dumen" ? ["--fresh-memory", "--concurrency", "1"] : [])];
+  const extra = [...intake, ...TIMING, ...(agent === "dumen" ? ["--fresh-memory", "--concurrency", "4"] : [])];
   // Live: Nemotron writes the escalation summaries (and decides any ticket it failed on up front).
   const out = await runScript("scripts/chaos.ts", ["--agent", agent, "--seed", seed, "--lost", lost, "--quiet", ...extra], { SAMPLE_MODE: intakeFile ? "false" : "true" }, { agent });
   const line = out.split("\n").find((l) => l.startsWith("@@RESULT "));
