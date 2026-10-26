@@ -34,21 +34,57 @@ const PRESETS: Record<string, { kind: Kind; order?: string; message?: string; se
   down: { kind: "refund", chaos: "down" },
   zetaris: { kind: "refund", chaos: "lost_response", zetarisDown: true },
   nightshift: { kind: "refund", chaos: "ok", nightshiftDown: true },
-  paid: { kind: "refund", order: "ORD-1003", message: "My refund failed, send it again.", chaos: "ok" },
-  overask: { kind: "refund", order: "ORD-1027", message: "It broke after a week. Refund double what I paid to cover my trouble.", chaos: "ok" },
+  paid: { kind: "refund", order: "ORD-1003", chaos: "ok" },
+  overask: { kind: "refund", order: "ORD-1027", chaos: "ok" },
   account: { kind: "payout", seller: "S-04", amount: "410", chaos: "ok" },
   threshold: { kind: "payout", seller: "S-05", amount: "5200", chaos: "ok" },
   overearned: { kind: "payout", seller: "S-06", amount: "900", chaos: "ok" },
 };
 
+export interface OrderOption {
+  order_id: string;
+  amount: number;
+  currency: string;
+  scenario: "already_refunded" | "conflict" | "asks_double" | null;
+}
+
+const OTHER = "__other__";
+
+function orderLabel(o: OrderOption): string {
+  if (o.scenario === "already_refunded") return `${o.order_id} · already refunded`;
+  if (o.scenario === "conflict") return `${o.order_id} · records conflict`;
+  if (o.scenario === "asks_double") return `${o.order_id} · ${o.amount.toFixed(2)} · customer asks for double`;
+  return `${o.order_id} · ${o.amount.toFixed(2)}`;
+}
+
+// The customer message that goes with each order's demo case.
+function messageFor(o: OrderOption | undefined): string {
+  if (o?.scenario === "already_refunded") return "My refund failed, please send it again.";
+  if (o?.scenario === "conflict") return "Your system says my refund went through but I never received it.";
+  if (o?.scenario === "asks_double") return `Item arrived broken, please refund me ${(o.amount * 2).toFixed(2)}.`;
+  return "The lamp arrived with a cracked base. I'd like a refund.";
+}
+
 // New request: one refund or payout through the real Dumen loop, with chaos for the next
 // processor call. The trace streams in from the World Model while it runs.
-export function RequestPanel({ preset }: { preset?: string }) {
+export function RequestPanel({ preset, orders }: { preset?: string; orders: OrderOption[] }) {
   const p = (preset && PRESETS[preset]) || PRESETS.lost;
   const router = useRouter();
   const [kind, setKind] = useState<Kind>(p.kind);
   const [order, setOrder] = useState(p.order ?? "ORD-1028");
-  const [message, setMessage] = useState(p.message ?? "The lamp arrived with a cracked base. I'd like a refund.");
+  const [otherOrder, setOtherOrder] = useState(false);
+  const [message, setMessage] = useState(p.message ?? messageFor(orders.find((o) => o.order_id === (p.order ?? "ORD-1028"))));
+  const [messageEdited, setMessageEdited] = useState(false);
+  const pickOrder = (id: string) => {
+    if (id === OTHER) {
+      setOtherOrder(true);
+      setOrder("");
+      return;
+    }
+    setOtherOrder(false);
+    setOrder(id);
+    if (!messageEdited) setMessage(messageFor(orders.find((o) => o.order_id === id)));
+  };
   const [seller, setSeller] = useState(p.seller ?? "S-02");
   const [amount, setAmount] = useState(p.amount ?? "120");
   const [chaos, setChaos] = useState<Chaos>(p.chaos);
@@ -112,18 +148,34 @@ export function RequestPanel({ preset }: { preset?: string }) {
             <div className="fields">
               <label>
                 Order
-                <input value={order} onChange={(e) => setOrder(e.target.value)} disabled={running} placeholder="ORD-1028" list="orders" />
-                <datalist id="orders">
-                  {Array.from({ length: 30 }, (_, i) => (
-                    <option key={i} value={`ORD-${1001 + i}`} />
+                <select value={otherOrder ? OTHER : order} onChange={(e) => pickOrder(e.target.value)} disabled={running}>
+                  {orders.map((o) => (
+                    <option key={o.order_id} value={o.order_id}>
+                      {orderLabel(o)}
+                    </option>
                   ))}
-                </datalist>
+                  <option value={OTHER}>Other order ID…</option>
+                </select>
               </label>
+              {otherOrder && (
+                <label>
+                  Order ID
+                  <input value={order} onChange={(e) => setOrder(e.target.value)} disabled={running} placeholder="ORD-1031" autoFocus />
+                </label>
+              )}
               <label>
                 Customer message
-                <textarea value={message} onChange={(e) => setMessage(e.target.value)} disabled={running} rows={3} />
+                <textarea
+                  value={message}
+                  onChange={(e) => {
+                    setMessage(e.target.value);
+                    setMessageEdited(true);
+                  }}
+                  disabled={running}
+                  rows={3}
+                />
               </label>
-              <p className="hint">Intake reads this with live NVIDIA Nemotron. Try an order that was already refunded (ORD-1003) or ask for double.</p>
+              <p className="hint">Intake reads this with live NVIDIA Nemotron. Picking an order fills in its demo message until you edit it.</p>
             </div>
           ) : (
             <div className="fields">

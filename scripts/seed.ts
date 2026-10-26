@@ -178,5 +178,16 @@ await withClient(PROCESSOR_URL, async (c) => {
 });
 
 writeFileSync(new URL("../data/sample/tickets.json", import.meta.url), JSON.stringify(tickets, null, 2) + "\n");
+// The dashboard's New-request form lists every order with its demo case.
+const scenario = (o: Order) => {
+  const h = refunds.find((r) => r.order_id === o.order_id);
+  const paid = processorLog.some((p) => p.refund_key === h?.refund_key && p.processor_status === "succeeded");
+  if (o === conflicted) return "conflict";
+  if (paid) return "already_refunded";
+  if (tickets.some((t) => t.order_id === o.order_id && t.amount_requested > o.amount)) return "asks_double";
+  return null;
+};
+const orderList = orders.map((o) => ({ order_id: o.order_id, amount: o.amount, currency: o.currency, scenario: scenario(o) }));
+writeFileSync(new URL("../data/sample/orders.json", import.meta.url), JSON.stringify(orderList, null, 2) + "\n");
 
 console.log(`orders: ${orders.length}, internal refunds: ${refunds.length}, processor rows: ${processorLog.length}, tickets: ${tickets.length}, sellers: ${sellers.length}, payouts: ${payouts.length}, bank rows: ${bankLog.length}`);
