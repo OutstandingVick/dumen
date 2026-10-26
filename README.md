@@ -8,30 +8,30 @@ Open Agent Hackathon 2026 · Track 3: Reasoning Architecture
 
 | Seed | Lost rate | Agent | Double refunds | Overpaid refunds | Refund $ lost | Duplicate payouts | Risky payouts sent | Payout $ lost | Escalations | Rejections |
 |---|---|---|---|---|---|---|---|---|---|---|
-| 42 | 0.2 | baseline | **7** | **1** | 1492.20 | **3** | **2** | 719.90 | 0 | 0 |
+| 42 | 0.2 | baseline | **5** | 0 | 524.43 | **7** | **2** | 2655.55 | 0 | 0 |
 | 42 | 0.2 | **Dumen** | **0** | **0** | 0.00 | **0** | **0** | 0.00 | 5 | 5 |
-| 1 | 0.2 | baseline | **7** | **1** | 1384.52 | **2** | **2** | 599.90 | 0 | 0 |
+| 1 | 0.2 | baseline | **6** | 0 | 1091.04 | **8** | **2** | 7320.55 | 0 | 0 |
 | 1 | 0.2 | **Dumen** | **0** | **0** | 0.00 | **0** | **0** | 0.00 | 5 | 5 |
-| 7 | 0.2 | baseline | **7** | **1** | 1142.20 | **7** | **2** | 2535.55 | 0 | 0 |
+| 7 | 0.2 | baseline | **5** | 0 | 576.42 | **4** | **2** | 1150.30 | 0 | 0 |
 | 7 | 0.2 | **Dumen** | **0** | **0** | 0.00 | **0** | **0** | 0.00 | 5 | 5 |
-| 42 | 0 (control) | baseline | **3** | **1** | 438.96 | **2** | **2** | 599.90 | 0 | 0 |
+| 42 | 0 (control) | baseline | **3** | 0 | 247.88 | **2** | **2** | 599.90 | 0 | 0 |
 | 42 | 0 (control) | **Dumen** | **0** | **0** | 0.00 | **0** | **0** | 0.00 | 5 | 5 |
 
-Each run: 22 synthetic refund tickets, then 10 seller payouts in 2 batches. The mock processor and bank rail run in **naive mode** in every row, so they never de-duplicate and every retry is a real payment. Dumen prevents duplicates on its own. "$ lost" is everything paid beyond what was owed. "Risky payouts sent" counts payouts that went out without the check they needed. Reproduce with `npm run compare`.
+Each run: 22 synthetic refund tickets, then 10 seller payouts in 2 batches. The mock processor and bank rail run in **naive mode** in every row, so they never de-duplicate and every retry is a real payment. Dumen prevents duplicates on its own. The comparison is like for like: both agents work from the same Nemotron intake decisions, and the chaos is seeded per action (a ticket's refund, a payout) and attempt, so both lose the same replies; on seed 42, T-005 and T-019. "$ lost" is everything paid beyond what was owed. "Risky payouts sent" counts payouts that went out without the check they needed. Reproduce with `npm run compare`.
 
 Even with no lost responses (the control), the baseline:
 - pays three orders twice: two already paid behind a "pending" internal record (T-017, T-018), and one malicious *"my refund failed, send it again"* (T-020)
-- overpays T-022, which asks for double the order
+- pays T-022, which asks for double the order, without flagging the over-ask (the model's decision caps the amount at the order total)
 - re-sends two payouts the bank had already made
 - pays a seller whose bank account changed three hours earlier, and a 5,200 payout no one approved
 
-Dumen rejects the already-paid cases with evidence from Zetaris and escalates the rest.
+Dumen rejects the already-paid cases with evidence from Zetaris and escalates the rest, T-022 included: a customer asking for more than is owed is escalated whatever the model decided.
 
 ## The problem
 
 An agent calls the payment processor or the bank, and the confirmation never arrives: a timeout, a dropped connection, or a slow 202. From the agent's memory, nothing happened, so it retries and the customer or seller is paid twice. For a payout batch it's worse: the bank may have executed *some* of the batch before the connection dropped, and re-sending the whole batch pays those again. The agent's own records ("pending") disagree with what the processor actually did ("succeeded"), and nothing reconciles the two before money moves. Agents are also confidently wrong about amounts: a ticket asks for double, or a payout exceeds what the seller earned.
 
-Dumen treats "I don't know if it was paid" as a state of its own. Nothing in that state is paid again until a code-only Verifier has checked a unified view of both systems (Zetaris `refund_truth` and `payout_truth`), one action at a time. The Verifier also refuses any amount above what's owed, holds payouts to a bank account changed in the last 24 hours, and sends payouts above 2,500 to a person. If the Verifier can't decide, a person gets the case, never a second payment.
+Dumen treats "I don't know if it was paid" as a state of its own. Nothing in that state is paid again until a code-only Verifier has checked a unified view of both systems (Zetaris `refund_truth` and `payout_truth`), one action at a time. The Verifier also refuses any amount above what's owed (and escalates a customer who asks for more), holds payouts to a bank account changed in the last 24 hours, and sends payouts above 2,500 to a person. If the Verifier can't decide, a person gets the case, never a second payment.
 
 ## Architecture
 
@@ -89,7 +89,7 @@ Only a person (`agentId=human`, with a reason) can move an escalated action. App
 | Extra holds | conflict between our records and the processor | bank account changed < 24h · above 2,500 (needs a person) |
 | After a timeout | verify this refund | verify **each** payout; re-send only the unpaid ones, never the whole batch |
 
-On the bank rail, a lost response executes only the first *k* payouts of the batch (k from the seeded chaos) before the connection drops. `npm run payouts:check` drives that case. With processor seed 2: the first send carried PO-0001+0002+0005 and the bank paid only PO-0001, the re-send carried PO-0002+0005, then PO-0005 alone. Each payout was paid exactly once.
+On the bank rail, each payout has its own seeded fate and the batch takes the worst of them. A lost response executes the payouts up to and including the first lost one before the connection drops. `npm run payouts:check` drives that case. With processor seed 2: the first send carried PO-0001+0002+0005 and the bank paid only PO-0001, the re-send carried PO-0002+0005, then PO-0005 alone. Each payout was paid exactly once.
 
 ## Dashboard
 
@@ -97,16 +97,16 @@ On the bank rail, a lost response executes only the first *k* payouts of the bat
 npm run dashboard        # http://localhost:3012
 ```
 
-The ops view for a payments lead, built only from run files: your local runs in `logs/`, plus a committed demo in `samples/demo/`. The demo is a live NVIDIA Nemotron run (seed 42, lost 0.2, warm H-MEM, one ticket at a time) with its baseline counterpart, so a fresh clone shows real model-written escalation summaries and lessons loaded from a previous run. It shows what Dumen stopped, why, and what needs attention. A **Refunds / Payouts** switch flips the receipts, the list and the traces between the two. A payout's trace includes its batch steps: the batch send, the per-payout verification, and the unpaid-only re-send. Refund and payout cases share one escalation queue.
+The ops view for a payments lead, built only from run files: your local runs in `logs/`, plus a committed demo in `samples/demo/`. The demo is a live NVIDIA Nemotron run (seed 42, lost 0.2, warm H-MEM, one ticket at a time) with its baseline counterpart on the same decisions and chaos, so a fresh clone shows real model-written escalation summaries and lessons loaded from a previous run. It shows what Dumen stopped, why, and what needs attention. A **Refunds / Payouts** switch flips the receipts, the list and the traces between the two. A payout's trace includes its batch steps: the batch send, the per-payout verification, and the unpaid-only re-send. Refund and payout cases share one escalation queue.
 
 **It's also an ops tool, not just a viewer:**
 - **New request:** submit a refund (order + the customer's message) or a payout (seller + amount), then press **Process**. It goes through the real Dumen loop ([scripts/request.ts](scripts/request.ts)): Intake on live Nemotron, Executor, Verifier via Zetaris, and Escalation when needed. The trace streams in from the World Model as each step is written. Requests collect in an "interactive" run, and a new one starts after any chaos run.
 - **Chaos controls:** choose what the processor's next call does (ok, lost reply, slow, fail, down), and toggle Zetaris down or Nightshift down for that request. The call after it behaves normally.
-- **Run comparison:** choose **Cached** (replays saved Nemotron decisions; fast and reproducible) or **Live (Nemotron)**. A progress bar shows the agent, ticket N of 22 or the payout phase, and the current step.
+- **Run comparison:** choose **Cached** (replays saved Nemotron decisions; fast and reproducible) or **Live (Nemotron)**, which asks Nemotron for every decision up front, six at a time, and gives both agents the same ones. A progress line shows where it is, e.g. "Nemotron decided 22/22 · Dumen paying 28/32 · verifying PO-0010".
 
-![Baseline vs Dumen on the same seed: 1,301.12 paid out twice vs 0.00](docs/screenshots/overview.png)
+![Baseline vs Dumen on the same seed: 3,179.98 paid beyond what was owed vs 0.00](docs/screenshots/overview.png)
 
-**Run comparison** runs baseline vs Dumen on a seed and lost rate you choose (about 45 seconds), then opens the new run. Each refund's **trace** is every World Model event: which agent, the state change, the reason, and the evidence (the Zetaris query and rows, or the processor response). Handoffs between agents are blue, and the other agent's trace for the same ticket sits underneath:
+**Run comparison** runs baseline vs Dumen on a seed and lost rate you choose (about 45 seconds, Live or Cached), then opens the new run. Escalation summaries are written by Nemotron after the run: each case shows a template until its summary arrives. Each refund's **trace** is every World Model event: which agent, the state change, the reason, and the evidence (the Zetaris query and rows, or the processor response). Handoffs between agents are blue, and the other agent's trace for the same ticket sits underneath:
 
 ![Trace: Dumen verifies a lost confirmation and confirms without paying again; the baseline retries and pays twice](docs/screenshots/trace.png)
 
@@ -205,7 +205,7 @@ npm run compare               # baseline vs Dumen on seeds 42, 1, 7 + control �
 Zetaris runs in Docker and reaches the two Dumen databases through `host.docker.internal`. If your Zetaris UI isn't on port 3001, set `ZETARIS_URL`.
 
 ### Sample mode (no model credentials)
-With `SAMPLE_MODE=true`, the generator returns fixed answers and no Nightshift token is needed. `npm run compare` runs the baseline in sample mode and Dumen with `--cached-intake` (real Nemotron decisions saved in [samples/intake_cache.json](samples/intake_cache.json)) and `--fresh-memory` (ignores lessons saved by earlier runs), so **every run of `npm run compare` prints the same table.**
+With `SAMPLE_MODE=true`, the generator returns fixed answers and no Nightshift token is needed. `npm run compare` runs both agents with `--cached-intake` (real Nemotron decisions saved in [samples/intake_cache.json](samples/intake_cache.json)) and Dumen with `--fresh-memory` (ignores lessons saved by earlier runs), so **every run of `npm run compare` prints the same table.**
 
 ### Running live with Nemotron
 Set `NIGHTSHIFT_BASE_URL`, `NIGHTSHIFT_API_KEY`, `NIGHTSHIFT_MODEL` and `SAMPLE_MODE=false` in `.env`, then:
@@ -214,9 +214,12 @@ Set `NIGHTSHIFT_BASE_URL`, `NIGHTSHIFT_API_KEY`, `NIGHTSHIFT_MODEL` and `SAMPLE_
 npm run chaos -- --agent dumen --seed 42 --lost 0.2                  # live intake, 4 tickets at a time
 npm run chaos -- --agent dumen --seed 42 --lost 0.2 --save-intake    # also refresh samples/intake_cache.json
 npm run chaos -- --agent baseline --seed 42 --lost 0.2               # the bug
+npm run compare -- --live                                            # the table, on live decisions shared by both agents
 ```
 
-Chaos options: `--lost`, `--slow`, `--fail`, `--down` (rates per processor call), `--seed`, `--tickets`, `--concurrency`, `--call-timeout-ms`, `--cached-intake`, `--fresh-memory`, `--zetaris-down`, `--nightshift-down`.
+Comparisons use shorter waits than a single chaos run (1s call timeout, 0.8–3s verify windows instead of 3s and 2–8s). With no slow confirms in the mix, what fails is the same; it only runs faster.
+
+Chaos options: `--lost`, `--slow`, `--fail`, `--down` (rates per action attempt), `--seed`, `--tickets`, `--concurrency`, `--call-timeout-ms`, `--verify-wait-ms`, `--verify-max-ms`, `--cached-intake`, `--intake-file`, `--fresh-memory`, `--zetaris-down`, `--nightshift-down`.
 
 ### Checks
 
@@ -250,7 +253,7 @@ Every chaos run writes `logs/<runId>/`:
 - **Synthetic everything.** Orders, tickets, sellers, payouts, the processor and the bank rail are synthetic ([data/README.md](data/README.md)); both rails are mocks with seeded chaos, not real payment APIs.
 - **Simple payout rules.** The earned-balance check compares each payout to the seller's balance on its own, not net of their other payouts in the batch. The 2,500 approval threshold is a constant ([agents/verifier.ts](agents/verifier.ts)).
 - **Zetaris is required.** The Verifier has no fallback by design: if `refund_truth` or `payout_truth` is unreachable, refunds and payouts escalate instead of paying. A judge needs a local Zetaris instance to run anything.
-- **Verification costs time.** Each `refund_truth` query takes about 1.3s, and a refund whose processor never answers takes about 20s (three calls plus wait windows) before escalating.
+- **Verification costs time.** Each `refund_truth` query takes about 1.3s, and with the default timings a refund whose processor never answers takes about 20s (three calls plus wait windows) before escalating.
 - **Model output varies.** Nemotron sometimes writes "approved" instead of "refund", or declines on its own; Intake normalises the former, and the Verifier's check runs regardless. Live runs therefore differ slightly from cached ones in timing and wording, not in payments.
 - **Partial engines.** Built: the minimum services from each spec. Not built: H-MEM dreaming, sleep and conflict resolution; World Model enrichment, relationship service and supervisor agent. The Markovian engine isn't used (no long single tasks).
 - **Single process.** The world store and memory are JSONL/JSON files with in-process locking; a multi-process deployment would need the spec's Postgres-backed store.

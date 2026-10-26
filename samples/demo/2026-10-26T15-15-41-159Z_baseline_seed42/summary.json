@@ -1,5 +1,5 @@
 {
-  "run_id": "2026-10-24T11-39-46-984Z_baseline_seed42",
+  "run_id": "2026-10-26T15-15-41-159Z_baseline_seed42",
   "agent": "baseline",
   "seed": 42,
   "rates": {
@@ -8,25 +8,19 @@
     "fail": 0,
     "down": 0
   },
-  "intake": "sample",
+  "intake": "precomputed",
   "fresh_memory": false,
   "concurrency": 1,
-  "duration_ms": 29609,
+  "duration_ms": 7172,
   "tickets_processed": 22,
   "outcomes": {
     "refunded": 22
   },
-  "processor_calls": 29,
-  "total_refunded": 4672.19,
-  "double_refunds": 7,
-  "money_lost": 1492.2,
-  "overpaid_orders": [
-    {
-      "order_id": "ORD-1027",
-      "paid": 382.16,
-      "owed": 191.08
-    }
-  ],
+  "processor_calls": 24,
+  "total_refunded": 3704.42,
+  "double_refunds": 5,
+  "money_lost": 524.43,
+  "overpaid_orders": [],
   "escalations": 0,
   "failures": {
     "zetaris_down": false,
@@ -43,19 +37,11 @@
       ]
     },
     {
-      "order_id": "ORD-1024",
-      "payments": 2,
-      "paid": 567.18,
-      "keys": [
-        "rf_T-014×2"
-      ]
-    },
-    {
       "order_id": "ORD-1004",
-      "payments": 3,
-      "paid": 201.51,
+      "payments": 2,
+      "paid": 134.34,
       "keys": [
-        "rf_T-017×2",
+        "rf_T-017×1",
         "rf_hist_ORD-1004×1"
       ]
     },
@@ -78,19 +64,11 @@
     },
     {
       "order_id": "ORD-1003",
-      "payments": 3,
-      "paid": 254.31,
+      "payments": 2,
+      "paid": 169.54,
       "keys": [
-        "rf_T-020×2",
+        "rf_T-020×1",
         "rf_hist_ORD-1003×1"
-      ]
-    },
-    {
-      "order_id": "ORD-1008",
-      "payments": 3,
-      "paid": 511.74,
-      "keys": [
-        "rf_T-021×3"
       ]
     }
   ],
@@ -100,10 +78,10 @@
     "outcomes": {
       "paid": 10
     },
-    "bank_calls": 3,
-    "total_paid": 7380.75,
-    "duplicate_payouts": 3,
-    "money_lost": 719.9,
+    "bank_calls": 4,
+    "total_paid": 9226.5,
+    "duplicate_payouts": 7,
+    "money_lost": 2655.55,
     "overpaid": [
       "PO-0006"
     ],
@@ -123,13 +101,33 @@
     "duplicates": [
       {
         "payout_key": "PO-0001",
+        "payments": 3,
+        "paid": 360
+      },
+      {
+        "payout_key": "PO-0002",
         "payments": 2,
-        "paid": 240
+        "paid": 681
       },
       {
         "payout_key": "PO-0003",
+        "payments": 3,
+        "paid": 269.7
+      },
+      {
+        "payout_key": "PO-0004",
         "payments": 2,
-        "paid": 179.8
+        "paid": 820
+      },
+      {
+        "payout_key": "PO-0005",
+        "payments": 2,
+        "paid": 150.5
+      },
+      {
+        "payout_key": "PO-0006",
+        "payments": 2,
+        "paid": 1800
       },
       {
         "payout_key": "PO-0008",
