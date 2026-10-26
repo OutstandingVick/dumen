@@ -106,6 +106,12 @@
       "decision": "refund",
       "amount": 170.58,
       "reason": "Customer reported refund not received despite system status; full refund re-approved per reported non-receipt."
+    },
+    "T-022": {
+      "decision": "refund",
+      "amount": 191.08,
+      "reason": "Item defective after one week; full refund approved per policy. Refund amount set to order total as per policy, cannot exceed 191.08 GBP."
     }
-  }
+  },
+  "saved_at_t022": "2026-10-26T12:49:00.796Z"
 }

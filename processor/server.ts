@@ -37,7 +37,7 @@ const BEHAVIOURS: Behaviour[] = ["ok", "lost_response", "real_fail", "slow_confi
 if (args.first && !BEHAVIOURS.includes(args.first as Behaviour)) throw new Error(`--first must be one of ${BEHAVIOURS.join(", ")}`);
 let forced: Behaviour | null = (args.first as Behaviour) ?? null;
 
-// mulberry32: same seed → same sequence of behaviours, call by call
+// mulberry32
 function prng(seed: number) {
   return () => {
     seed |= 0;
@@ -47,15 +47,26 @@ function prng(seed: number) {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
-const rand = prng(Number(args.seed));
+// FNV-1a: a string to a 32-bit seed
+function hash32(s: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 0x01000193);
+  return h >>> 0;
+}
 
-function nextBehaviour(): Behaviour {
+// Chaos is seeded per action, not per call: the n-th call for the same action (a ticket's
+// refund, a payout) gets the same behaviour whichever agent makes it and in whatever order,
+// so both agents meet the same failures on the same tickets.
+const attempts = new Map<string, number>();
+function behaviourFor(actionKey: string): Behaviour {
   if (forced) {
     const b = forced;
     forced = null;
     return b;
   }
-  let r = rand();
+  const n = (attempts.get(actionKey) ?? 0) + 1;
+  attempts.set(actionKey, n);
+  let r = prng(hash32(`${args.seed}|${actionKey}|${n}`))();
   if ((r -= rates.lost) < 0) return "lost_response";
   if ((r -= rates.slow) < 0) return "slow_confirm";
   if ((r -= rates.fail) < 0) return "real_fail";
@@ -106,7 +117,9 @@ async function handleRefund(req: IncomingMessage, res: ServerResponse) {
     return send(res, 400, { error: "refund_key and a positive amount are required" });
   }
 
-  const behaviour = nextBehaviour();
+  // The action is the ticket the refund is for (agents name their refund_keys differently).
+  const actionKey = typeof body.ticket_id === "string" && body.ticket_id ? `refund:${body.ticket_id}` : `refund:${refundKey}`;
+  const behaviour = behaviourFor(actionKey);
   const n = ++callNo;
   console.log(`#${n} POST /refund ${refundKey} ${amount} → ${behaviour}`);
 
@@ -137,9 +150,11 @@ async function handleGet(res: ServerResponse, refundKey: string) {
 }
 
 // ── Bank rail: batch payouts ───────────────────────────────────────────────
-// One call carries several payouts. Same seeded behaviours, one per call; a lost response
-// executes only the first k items (k from the same PRNG) before the connection drops, so a
-// timeout leaves some payouts done and some not. Naive mode doesn't dedupe by payout_key.
+// One call carries several payouts. Each payout has its own seeded behaviour (by payout_key
+// and attempt); the call takes the worst of them: down, then failed, then lost, then slow.
+// A lost response executes the items up to and including the first lost one before the
+// connection drops, so a timeout leaves some payouts done and some not. Naive mode doesn't
+// dedupe by payout_key.
 
 async function logPayout(payoutKey: string, amount: number) {
   await db.query("INSERT INTO bank_rail_log (payout_key, bank_status, amount, executed_at) VALUES ($1, 'succeeded', $2, now())", [payoutKey, amount]);
@@ -156,7 +171,8 @@ async function handlePayoutBatch(req: IncomingMessage, res: ServerResponse) {
   if (!items.length || items.length > 50 || !items.every((i) => /^[A-Za-z0-9_.:-]{1,100}$/.test(String(i.payout_key)) && Number(i.amount) > 0)) {
     return send(res, 400, { error: "items: 1-50 of {payout_key, amount > 0}" });
   }
-  const behaviour = nextBehaviour();
+  const fates = items.map((i) => behaviourFor(`payout:${i.payout_key}`));
+  const behaviour = (["down", "real_fail", "lost_response", "slow_confirm"] as Behaviour[]).find((b) => fates.includes(b)) ?? "ok";
   const n = ++callNo;
   console.log(`#${n} POST /payouts/batch ${body.batch_id ?? "-"} [${items.map((i) => i.payout_key).join(",")}] → ${behaviour}`);
 
@@ -181,7 +197,7 @@ async function handlePayoutBatch(req: IncomingMessage, res: ServerResponse) {
     return send(res, 202, { batch_id: body.batch_id, status: "processing" });
   }
   if (behaviour === "lost_response") {
-    const k = Math.floor(rand() * (items.length + 1)); // 0..n items executed before the drop
+    const k = fates.indexOf("lost_response") + 1; // items executed before the drop
     await execute(items.slice(0, k));
     console.log(`#${n}   executed ${k}/${items.length} before the connection dropped`);
     return hang(req);

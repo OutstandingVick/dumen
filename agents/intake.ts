@@ -107,7 +107,18 @@ export async function runIntake(ticket: Ticket, entityId: string, deps: IntakeDe
     return { outcome: "ESCALATED", decision };
   }
 
-  // 3. The order is clear; now the model's decision matters.
+  // 3. The customer asking for more than is still owed is the signal, whatever the model
+  //    decided: a model can trim the amount (or decline) and hide that the ask itself was off.
+  const owed = Math.max(0, deps.order.amount - check.evidence.paid_amount);
+  const asked = checkAmountOwed(ticket.ticket_id, "refund", ticket.amount_requested, owed, deps.verifier);
+  if (!asked.ok) {
+    const reason = `customer ${asked.reason}`;
+    await world.ingest.transition(entityId, "ESCALATED", actor, { provenance, evidence: check.evidence, reason, data: { requested: ticket.amount_requested, owed, model: decision } });
+    trace.write({ agent: AGENT, ticket_id: ticket.ticket_id, action: "verifier→escalation: requested_over_owed", input: provenance, output: { requested: ticket.amount_requested, owed, model: decision }, reason });
+    return { outcome: "ESCALATED", decision };
+  }
+
+  // 4. The order is clear and the ask is within what's owed; now the model's decision matters.
   if (!decision) {
     await world.ingest.transition(entityId, "ESCALATED", actor, { provenance: { source: "intake", response: raw.slice(0, 500) }, evidence: check.evidence, reason: raw.startsWith("generator error") ? `model unavailable (${raw.slice("generator error: ".length)}); no model decision = no refund` : "model gave no usable decision" });
     return { outcome: "ESCALATED", decision };
@@ -121,7 +132,6 @@ export async function runIntake(ticket: Ticket, entityId: string, deps: IntakeDe
   // Verifier checks the amount against what's owed; above it escalates, it is never trimmed
   // silently and never paid.
   const amount = Number.isFinite(decision.amount) && decision.amount > 0 ? decision.amount : ticket.amount_requested;
-  const owed = Math.max(0, deps.order.amount - check.evidence.paid_amount);
   const amountCheck = checkAmountOwed(ticket.ticket_id, "refund", amount, owed, deps.verifier);
   if (!amountCheck.ok) {
     await world.ingest.transition(entityId, "ESCALATED", actor, { provenance, evidence: check.evidence, reason: amountCheck.reason, data: { amount, owed } });

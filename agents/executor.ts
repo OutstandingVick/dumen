@@ -48,7 +48,7 @@ export async function execute(entityId: string, deps: ExecutorDeps): Promise<Exe
     const res = await fetch(`${deps.processorUrl}/refund`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ refund_key: refundKey, amount }),
+      body: JSON.stringify({ refund_key: refundKey, amount, ticket_id: ticketId }),
       signal: AbortSignal.timeout(deps.callTimeoutMs),
     });
     status = res.status;

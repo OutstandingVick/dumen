@@ -51,12 +51,12 @@ function parseDecision(text: string): { decision: string; amount: number; reason
 
 type CallResult = { kind: "ok"; status: number; body: any } | { kind: "timeout" } | { kind: "error"; message: string };
 
-async function callRefund(url: string, refundKey: string, amount: number, timeoutMs: number): Promise<CallResult> {
+async function callRefund(url: string, refundKey: string, amount: number, timeoutMs: number, ticketId: string): Promise<CallResult> {
   try {
     const res = await fetch(`${url}/refund`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ refund_key: refundKey, amount }),
+      body: JSON.stringify({ refund_key: refundKey, amount, ticket_id: ticketId }),
       signal: AbortSignal.timeout(timeoutMs),
     });
     return { kind: "ok", status: res.status, body: await res.json().catch(() => null) };
@@ -114,7 +114,7 @@ export async function runBaseline(ticket: Ticket, deps: BaselineDeps): Promise<{
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     const action = attempt === 0 ? "call_refund" : "retry_refund";
-    const res = await callRefund(processorUrl, refundKey, amount, callTimeoutMs);
+    const res = await callRefund(processorUrl, refundKey, amount, callTimeoutMs, ticket.ticket_id);
 
     if (res.kind === "timeout") {
       // The bug: no answer is treated as "it didn't happen", so pay again from memory.
