@@ -99,15 +99,15 @@ button.bad { color: var(--bad); }
 .chip.on { background: var(--ink); color: #fff; }
 
 /* ── Spec tiles + icon boxes ─────────────────────────────── */
-.iconbox { display: inline-grid; place-items: center; border-radius: 9px; border: 1px solid var(--line); background: #fff; color: var(--ink-2); flex: none; }
+.iconbox { display: inline-grid !important; place-items: center; line-height: 0; border-radius: 9px; border: 1px solid var(--line); background: #fff; color: var(--ink-2); flex: none; }
 .iconbox.orange { background: var(--orange); border-color: var(--orange); color: #fff; }
 .iconbox.dark { background: var(--ink); border-color: var(--ink); color: #fff; }
 .specs { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 18px; }
 .spec { display: flex; gap: 10px; align-items: center; min-width: 0; }
-.spec b { display: block; font-family: var(--mono); font-weight: 500; font-size: 15px; }
-.spec span { display: block; font-size: 12px; color: var(--muted); line-height: 1.25; }
-.spec.bad b { color: var(--bad); }
-.spec.good b { color: var(--good); }
+.spec > div > b { display: block; font-family: var(--mono); font-weight: 500; font-size: 15px; }
+.spec > div > span { display: block; font-size: 12px; color: var(--muted); line-height: 1.25; }
+.spec.bad > div > b { color: var(--bad); }
+.spec.good > div > b { color: var(--good); }
 .crew { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
 
 /* ── Overview bento ──────────────────────────────────────── */
