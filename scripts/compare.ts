@@ -1,9 +1,12 @@
 // Baseline vs Dumen on the same seeds, side by side, and the Phase 3 gate.
 //   npm run compare                      (seeds 42,1,7 at --lost 0.2, plus a lost 0 control)
 //   npm run compare -- --seeds 42 --lost 0.3
-// Reproducible by default: the baseline runs in sample mode, Dumen replays cached Nemotron intake
-// (--live: Dumen decides on live Nemotron instead; slower and not reproducible)
-// decisions with --fresh-memory, so every run of this script prints the same table.
+// Reproducible by default: both agents replay the cached Nemotron intake decisions, Dumen with
+// --fresh-memory, so every run of this script prints the same table.
+// --live: Nemotron decides every ticket first, in parallel (scripts/decide-all.ts), then both
+// agents pay on those same decisions, one after the other, against the same seeded chaos.
+// Not reproducible across runs (the model can change its mind), but fair within one.
+// "@@PROGRESS {...}" lines are for the dashboard.
 import "dotenv/config";
 import { spawn } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -49,41 +52,73 @@ interface Result {
   run_id: string;
 }
 
-function runChaos(agent: "baseline" | "dumen", seed: string, lost: string): Promise<Result> {
-  const extra = agent === "dumen" ? [...(args.live ? [] : ["--cached-intake"]), "--fresh-memory"] : [];
+const OUT = join(ROOT, "logs", `compare-${new Date().toISOString().replace(/[:.]/g, "-")}`);
+mkdirSync(OUT, { recursive: true });
+const progress = (p: Record<string, unknown>) => console.log(`@@PROGRESS ${JSON.stringify(p)}`);
+
+// Run a repo script; its @@PROGRESS lines are passed on, tagged with `tag`.
+function runScript(script: string, argv: string[], env: Record<string, string>, tag: Record<string, unknown>): Promise<string> {
   return new Promise((resolve, reject) => {
-    const p = spawn("npx", ["tsx", "scripts/chaos.ts", "--agent", agent, "--seed", seed, "--lost", lost, "--quiet", ...extra], {
-      cwd: ROOT,
-      // Baseline always uses sample decisions; Dumen goes live on Nemotron with --live.
-      env: { ...process.env, SAMPLE_MODE: agent === "dumen" && args.live ? "false" : "true" },
-      stdio: ["ignore", "pipe", "pipe"],
-    });
+    const p = spawn("npx", ["tsx", script, ...argv], { cwd: ROOT, env: { ...process.env, ...env }, stdio: ["ignore", "pipe", "pipe"] });
     let out = "";
     let err = "";
-    p.stdout.on("data", (d) => (out += d));
+    let pending = "";
+    p.stdout.on("data", (d) => {
+      out += d;
+      pending += d;
+      const lines = pending.split("\n");
+      pending = lines.pop() ?? "";
+      for (const l of lines) if (l.startsWith("@@PROGRESS ")) progress({ ...tag, ...JSON.parse(l.slice(11)) });
+    });
     p.stderr.on("data", (d) => (err += d));
     const timer = setTimeout(() => p.kill("SIGTERM"), 10 * 60_000);
     p.on("close", (code) => {
       clearTimeout(timer);
-      const line = out.split("\n").find((l) => l.startsWith("@@RESULT "));
-      if (code !== 0 || !line) return reject(new Error(`${agent} seed ${seed} failed (exit ${code}): ${err.slice(-500)}`));
-      resolve(JSON.parse(line.slice("@@RESULT ".length)));
+      if (code !== 0) return reject(new Error(`${script} failed (exit ${code}): ${(err || out).slice(-500)}`));
+      resolve(out);
     });
   });
+}
+
+// Live: all intake decisions first, in parallel; both agents then pay on the same ones.
+async function decideAll(): Promise<string> {
+  const file = join(OUT, "intake.json");
+  const out = await runScript("scripts/decide-all.ts", ["--out", file, "--concurrency", "6"], { SAMPLE_MODE: "false" }, { agent: "nemotron" });
+  console.log(out.split("\n").filter((l) => l && !l.startsWith("@@")).map((l) => `  ${l}`).join("\n"));
+  return file;
+}
+
+async function runChaos(agent: "baseline" | "dumen", seed: string, lost: string, intakeFile: string | null): Promise<Result> {
+  const intake = intakeFile ? ["--intake-file", intakeFile] : ["--cached-intake"];
+  const extra = [...intake, ...(agent === "dumen" ? ["--fresh-memory", "--concurrency", "1"] : [])];
+  // Live: Nemotron writes the escalation summaries (and decides any ticket it failed on up front).
+  const out = await runScript("scripts/chaos.ts", ["--agent", agent, "--seed", seed, "--lost", lost, "--quiet", ...extra], { SAMPLE_MODE: intakeFile ? "false" : "true" }, { agent });
+  const line = out.split("\n").find((l) => l.startsWith("@@RESULT "));
+  if (!line) throw new Error(`${agent} seed ${seed}: no result line`);
+  return JSON.parse(line.slice("@@RESULT ".length));
 }
 
 const runs: Array<[string, string]> = args.seeds!.split(",").map((s) => [s.trim(), args.lost!]);
 if (args.control) runs.push([runs[0][0], "0"]);
 
+const t0 = Date.now();
+let intakeFile: string | null = null;
+if (args.live) {
+  console.log("Nemotron deciding every ticket (concurrency 6)…");
+  const d0 = Date.now();
+  intakeFile = await decideAll();
+  console.log(`  decisions ready in ${((Date.now() - d0) / 1000).toFixed(1)}s`);
+}
 const rows: Array<{ seed: string; lost: string; baseline: Result; dumen: Result }> = [];
 for (const [seed, lost] of runs) {
-  process.stdout.write(`seed ${seed} lost ${lost}: baseline…`);
-  const baseline = await runChaos("baseline", seed, lost);
-  process.stdout.write(` dumen…`);
-  const dumen = await runChaos("dumen", seed, lost);
-  console.log(` done (${((baseline.duration_ms + dumen.duration_ms) / 1000).toFixed(0)}s)`);
+  console.log(`seed ${seed} lost ${lost}: baseline…`);
+  const baseline = await runChaos("baseline", seed, lost, intakeFile);
+  console.log(`  baseline ${(baseline.duration_ms / 1000).toFixed(1)}s · dumen…`);
+  const dumen = await runChaos("dumen", seed, lost, intakeFile);
+  console.log(`  dumen ${(dumen.duration_ms / 1000).toFixed(1)}s`);
   rows.push({ seed, lost, baseline, dumen });
 }
+console.log(`\nTotal run time: ${((Date.now() - t0) / 1000).toFixed(1)}s (${args.live ? "live" : "cached"})`);
 
 const pad = (s: string | number, n: number) => String(s).padStart(n);
 const money = (n: number) => n.toFixed(2);
@@ -128,8 +163,7 @@ const gate = [
 console.log("\nGate:");
 for (const g of gate) console.log(`  ${g.ok ? "PASS" : "FAIL"}  ${g.name}`);
 
-const dir = join(ROOT, "logs", `compare-${new Date().toISOString().replace(/[:.]/g, "-")}`);
-mkdirSync(dir, { recursive: true });
+const dir = OUT;
 writeFileSync(join(dir, "compare.json"), JSON.stringify({ rows, gate }, null, 2) + "\n");
 writeFileSync(join(dir, "compare.md"), md.join("\n") + "\n\n" + gate.map((g) => `- ${g.ok ? "PASS" : "FAIL"} ${g.name}`).join("\n") + "\n");
 console.log(`\nSaved: logs/${dir.split("/logs/")[1]}/compare.md`);

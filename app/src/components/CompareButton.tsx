@@ -11,11 +11,8 @@ interface Job {
 }
 
 interface Progress {
-  agent: "baseline" | "dumen";
-  tickets: number;
-  ticketsTotal: number;
-  payoutsPhase: boolean;
-  step: string | null;
+  text: string;
+  pct: number;
 }
 
 // Starts baseline vs Dumen on one seed (scripts/compare.ts), shows where it is, then opens
@@ -79,10 +76,7 @@ export function CompareButton({ defaultSeed, defaultLost, defaultLive = false }:
   }
 
   const running = job?.status === "running";
-  // Two runs (baseline, then Dumen), each: refund tickets, then payouts.
-  const pct = progress
-    ? Math.min(99, Math.round(((progress.agent === "dumen" ? 50 : 0) + (progress.payoutsPhase ? 40 : (progress.tickets / progress.ticketsTotal) * 40) + (progress.payoutsPhase ? 5 : 0)) ))
-    : 2;
+  const pct = progress ? Math.max(2, progress.pct) : 2;
   return (
     <div className="compare">
       <div className="row">
@@ -115,9 +109,7 @@ export function CompareButton({ defaultSeed, defaultLost, defaultLive = false }:
             <i style={{ width: `${pct}%` }} />
           </div>
           <div className="hint">
-            {progress
-              ? `${progress.agent === "dumen" ? "2/2 Dumen" : "1/2 baseline"} · ${progress.payoutsPhase ? "payouts" : `ticket ${Math.max(1, progress.tickets)}/${progress.ticketsTotal}`}${progress.step ? ` · ${progress.step}` : ""}`
-              : "resetting the databases…"}
+            {progress ? progress.text : live ? "warming up Nemotron…" : "resetting the databases…"}
           </div>
         </div>
       )}

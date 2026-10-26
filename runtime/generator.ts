@@ -2,6 +2,9 @@
 // Signature matches the Meterless Agent Engines README exactly:
 //   generator(prompt, attachments, systemPrompt, onStream, abortSignal) → { text }
 // Point it at a different OpenAI-compatible provider by changing .env, nothing else.
+import { mkdirSync, statSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import OpenAI from "openai";
 
 export interface GeneratorResult {
@@ -79,9 +82,40 @@ export const generator: Generator = async (prompt, attachments, systemPrompt, on
         onStream(delta);
       }
     }
+    markWarm();
     return { text };
   }
 
   const res = await getClient().chat.completions.create({ model, messages }, { signal });
+  markWarm();
   return { text: res.choices[0]?.message?.content ?? "" };
 };
+
+// Nightshift cold-starts after a while idle. Every successful live call stamps a file, so a
+// run can skip its throwaway warm-up call when the model answered in the last 10 minutes.
+const WARM_STAMP = join(dirname(fileURLToPath(import.meta.url)), "..", "logs", ".nightshift-warm");
+const WARM_FOR_MS = 10 * 60_000;
+
+function markWarm() {
+  try {
+    mkdirSync(dirname(WARM_STAMP), { recursive: true });
+    writeFileSync(WARM_STAMP, new Date().toISOString());
+  } catch {
+    // a missing stamp only costs a warm-up call next time
+  }
+}
+
+export async function warmUp(): Promise<{ skipped: boolean; ms: number; error?: string }> {
+  try {
+    if (Date.now() - statSync(WARM_STAMP).mtimeMs < WARM_FOR_MS) return { skipped: true, ms: 0 };
+  } catch {
+    // never warmed on this machine
+  }
+  const t0 = Date.now();
+  try {
+    await generator("Reply with the word ready.", null, "Reply with one word.");
+    return { skipped: false, ms: Date.now() - t0 };
+  } catch (e: any) {
+    return { skipped: false, ms: Date.now() - t0, error: e.message };
+  }
+}

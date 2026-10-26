@@ -19,6 +19,8 @@ export interface DumenDeps {
   verifier: Omit<VerifierDeps, "world" | "memory" | "trace">;
   cachedIntake?: Record<string, IntakeDecision>;
   modelSummaries?: boolean; // false: escalation uses the template summary (cached / benchmark runs)
+  deferSummaries?: boolean; // true: template now, model summary in finishSummaries() at run end
+  onVerify?: (entityId: string) => void; // progress: an uncertain call is being verified
 }
 
 export interface DumenResult {
@@ -40,6 +42,7 @@ export async function executeUntilSettled(entityId: string, ticketMessage: strin
     const exec = e.kind === "payout" ? (await executePayoutBatch([entityId], e.batchId ?? "approved", execDeps))[0] : await execute(entityId, execDeps);
     if (exec.state === "CONFIRMED") return "CONFIRMED";
 
+    deps.onVerify?.(entityId);
     const v = await verifyAfterUncertainCall(entityId, exec.callStartedAt, exec.uncertainty ?? "timeout", verifierDeps);
     const refundKey = e.refundKey;
     const table = e.kind === "payout" ? "payouts" : "refunds";
@@ -49,7 +52,7 @@ export async function executeUntilSettled(entityId: string, ticketMessage: strin
       return "CONFIRMED";
     }
     if (v.decision === "ESCALATED") {
-      await escalate(entityId, { world, trace, ticketMessage, useModel: deps.modelSummaries });
+      await escalate(entityId, { world, trace, ticketMessage, useModel: deps.modelSummaries, deferModel: deps.deferSummaries });
       return "ESCALATED";
     }
     // RETRY_SAME_KEY → next turn executes again with the same refund_key
@@ -84,7 +87,7 @@ export async function runDumen(ticket: Ticket, deps: DumenDeps): Promise<DumenRe
     order: { amount: Number(rows[0].amount), currency: rows[0].currency },
     cached: deps.cachedIntake?.[ticket.ticket_id],
   });
-  if (intake.outcome === "ESCALATED") await escalate(id, { world, trace, ticketMessage: ticket.message, useModel: deps.modelSummaries });
+  if (intake.outcome === "ESCALATED") await escalate(id, { world, trace, ticketMessage: ticket.message, useModel: deps.modelSummaries, deferModel: deps.deferSummaries });
   if (intake.outcome !== "APPROVED") return done(intake.decision);
 
   await executeUntilSettled(id, ticket.message, deps);

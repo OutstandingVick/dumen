@@ -17,8 +17,9 @@ import { runBaselinePayoutBatch } from "../agents/baseline-payouts.js";
 import { runPayoutBatch, type ScheduledPayout } from "../agents/payouts.js";
 import { PAYOUT_APPROVAL_THRESHOLD } from "../agents/verifier.js";
 import { runDumen, type DumenResult } from "../agents/dumen.js";
+import { takePendingSummaries } from "../agents/escalation.js";
 import type { IntakeDecision, Ticket } from "../agents/intake.js";
-import { generator } from "../runtime/generator.js";
+import { warmUp } from "../runtime/generator.js";
 import { openMemory, PROMOTION_POLICY } from "../runtime/memory/index.js";
 import { Trace } from "../runtime/trace.js";
 import { openWorld } from "../runtime/world/index.js";
@@ -42,6 +43,7 @@ const { values: args } = parseArgs({
     concurrency: { type: "string" },
     "cached-intake": { type: "boolean", default: false },
     "save-intake": { type: "boolean", default: false },
+    "intake-file": { type: "string" }, // decisions made up front (compare --live); both agents use them
     payouts: { type: "boolean", default: true }, // after the refunds, run the seller payout batches
     "fresh-memory": { type: "boolean", default: false }, // ignore and don't touch saved H-MEM lessons
     // Failure drills: point the client at a closed port, so the real "connection refused"
@@ -62,6 +64,8 @@ const SAMPLE_MODE = process.env.SAMPLE_MODE === "true" && !args["nightshift-down
 const runId = `${new Date().toISOString().replace(/[:.]/g, "-")}_${args.agent}_seed${args.seed}`;
 const money = (n: number) => n.toFixed(2);
 const log = (msg: string) => !args.quiet && console.log(msg);
+// Always printed, even with --quiet: compare.ts forwards these to the dashboard.
+const progress = (p: { phase: "paying"; done: number; total: number; verifying?: string }) => console.log(`@@PROGRESS ${JSON.stringify(p)}`);
 const step = (msg: string) => log(`\n▸ ${msg}`);
 
 async function waitForProcessor(proc: ChildProcess) {
@@ -102,11 +106,15 @@ if (args["nightshift-down"]) {
 }
 
 let cachedIntake: Record<string, IntakeDecision> | undefined;
-if (args["cached-intake"]) {
+if (args["intake-file"]) {
+  cachedIntake = JSON.parse(readFileSync(args["intake-file"], "utf8")).decisions;
+} else if (args["cached-intake"]) {
   if (!existsSync(INTAKE_CACHE)) throw new Error(`--cached-intake needs ${INTAKE_CACHE}; create it with a live run and --save-intake`);
   cachedIntake = JSON.parse(readFileSync(INTAKE_CACHE, "utf8")).decisions;
 }
-const intakeMode = args.agent === "baseline" ? (SAMPLE_MODE ? "sample" : "live") : cachedIntake ? "cached" : SAMPLE_MODE ? "sample" : "live";
+// "precomputed": live Nemotron decisions made up front by compare.ts, shared by both agents.
+const intakeMode = args["intake-file"] ? "precomputed" : args.agent === "baseline" ? (SAMPLE_MODE ? "sample" : "live") : cachedIntake ? "cached" : SAMPLE_MODE ? "sample" : "live";
+const modelSummaries = intakeMode === "live" || intakeMode === "precomputed";
 
 step("Resetting both databases");
 const seeded = spawnSync("npx", ["tsx", "scripts/seed.ts"], { cwd: ROOT, encoding: "utf8", timeout: 60_000 });
@@ -139,13 +147,8 @@ try {
   // Nemotron cold start: one throwaway call so the first ticket doesn't pay for it.
   if (intakeMode === "live") {
     step("Warming up the model");
-    const w0 = Date.now();
-    try {
-      await generator("Reply with the word ready.", null, "Reply with one word.");
-      log(`  warm in ${Date.now() - w0}ms`);
-    } catch (e: any) {
-      log(`  warm-up failed after ${Date.now() - w0}ms (${e.message}); continuing`);
-    }
+    const w = await warmUp();
+    log(w.skipped ? "  skipped: Nightshift answered in the last 10 minutes" : w.error ? `  warm-up failed after ${w.ms}ms (${w.error}); continuing` : `  warm in ${w.ms}ms`);
   }
 
   if (args["zetaris-down"]) {
@@ -157,6 +160,7 @@ try {
   step(`Running ${args.agent} on ${tickets.length} tickets · concurrency ${CONCURRENCY} · intake ${intakeMode}`);
   const outcomes: Record<string, number> = {};
   const count = (k: string) => (outcomes[k] = (outcomes[k] ?? 0) + 1);
+  let paid = 0; // tickets + payouts settled, for progress
   let dumenResults: DumenResult[] = [];
   let manifest: unknown = null;
   const payoutStates = new Map<string, string>(); // payout_key → final state (dumen) or batch outcome (baseline)
@@ -172,8 +176,9 @@ try {
   if (args.agent === "baseline") {
     await pool(tickets, CONCURRENCY, async (ticket) => {
       const s = Date.now();
-      const { outcome } = await runBaseline(ticket, { ordersDb, processorUrl: `http://127.0.0.1:${PORT}`, trace, callTimeoutMs: CALL_TIMEOUT_MS });
+      const { outcome } = await runBaseline(ticket, { ordersDb, processorUrl: `http://127.0.0.1:${PORT}`, trace, callTimeoutMs: CALL_TIMEOUT_MS, cached: cachedIntake?.[ticket.ticket_id] });
       count(outcome);
+      progress({ phase: "paying", done: ++paid, total: tickets.length + scheduled.length });
       log(`  ${ticket.ticket_id} ${ticket.order_id} → ${outcome} (${Date.now() - s}ms)`);
     });
     if (batches.size) step(`Running baseline payouts: ${scheduled.length} payouts in ${batches.size} batches`);
@@ -181,12 +186,16 @@ try {
       const s = Date.now();
       const outcome = await runBaselinePayoutBatch(batchId, list, { ordersDb, processorUrl: `http://127.0.0.1:${PORT}`, trace, callTimeoutMs: CALL_TIMEOUT_MS });
       for (const p of list) payoutStates.set(p.payout_key, outcome);
+      paid += list.length;
+      progress({ phase: "paying", done: paid, total: tickets.length + scheduled.length });
       log(`  ${batchId} (${list.length} payouts) → ${outcome} (${Date.now() - s}ms)`);
     }
   } else {
     const world = openWorld(runId);
     const fresh = args["fresh-memory"];
     const memory = openMemory({ runId, fresh });
+    const ticketOf = (entityId: string) => world.store.entity(entityId)?.ticketId ?? entityId;
+    const onVerify = (entityId: string) => progress({ phase: "paying", done: paid, total: tickets.length + scheduled.length, verifying: ticketOf(entityId) });
     log(fresh ? "  H-MEM: fresh memory (saved lessons ignored, nothing persisted)" : `  H-MEM: ${memory.hydrated} long-term memories hydrated`);
     dumenResults = await pool(tickets, CONCURRENCY, async (ticket) => {
       const s = Date.now();
@@ -199,9 +208,12 @@ try {
         callTimeoutMs: CALL_TIMEOUT_MS,
         verifier: { defaultWaitMs: 2000, maxWaitMs: 8000, pollMs: 300 },
         cachedIntake,
-        modelSummaries: intakeMode === "live",
+        modelSummaries,
+        deferSummaries: modelSummaries,
+        onVerify,
       });
       count(r.state);
+      progress({ phase: "paying", done: ++paid, total: tickets.length + scheduled.length });
       log(`  ${ticket.ticket_id} ${ticket.order_id} → ${r.state}${r.executions ? ` (${r.executions} call${r.executions > 1 ? "s" : ""})` : ""} (${Date.now() - s}ms)`);
       return r;
     });
@@ -217,10 +229,23 @@ try {
         processorUrl: `http://127.0.0.1:${PORT}`,
         callTimeoutMs: CALL_TIMEOUT_MS,
         verifier: { defaultWaitMs: 2000, maxWaitMs: 8000, pollMs: 300 },
-        modelSummaries: intakeMode === "live",
+        modelSummaries,
+        deferSummaries: modelSummaries,
+        onVerify,
       });
       for (const r of results) payoutStates.set(r.payoutKey, r.state);
+      paid += list.length;
+      progress({ phase: "paying", done: paid, total: tickets.length + scheduled.length });
       log(`  ${batchId} → ${results.map((r) => `${r.payoutKey} ${r.state}${r.executions ? ` (${r.executions})` : ""}`).join(", ")} (${Date.now() - s}ms)`);
+    }
+
+    // Nemotron's case summaries, all at once and after the run: cases show their template
+    // summary until scripts/summaries.ts (detached, so the run can report now) replaces it.
+    const pendingSummaries = takePendingSummaries();
+    if (pendingSummaries.length) {
+      writeFileSync(join(runDir, "pending-summaries.json"), JSON.stringify(pendingSummaries, null, 2) + "\n");
+      spawn("npx", ["tsx", "scripts/summaries.ts", "--run", runId], { cwd: ROOT, detached: true, stdio: "ignore" }).unref();
+      log(`  escalation summaries: ${pendingSummaries.length} being written by Nemotron in the background`);
     }
 
     // Run end: promote lessons that meet the policy, persist long-term memory.

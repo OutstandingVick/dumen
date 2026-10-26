@@ -3,6 +3,7 @@
 import type pg from "pg";
 import { generator } from "../runtime/generator.js";
 import type { Trace } from "../runtime/trace.js";
+import type { IntakeDecision } from "./intake.js";
 
 export interface Ticket {
   ticket_id: string;
@@ -17,6 +18,8 @@ export interface BaselineDeps {
   processorUrl: string;
   trace: Trace;
   callTimeoutMs: number;
+  // In a comparison both agents get the same model decision; only the retry behaviour differs.
+  cached?: IntakeDecision;
 }
 
 export type TicketOutcome = "refunded" | "declined" | "failed" | "timed_out" | "error";
@@ -85,15 +88,18 @@ export async function runBaseline(ticket: Ticket, deps: BaselineDeps): Promise<{
     `Customer message: "${ticket.message}"`,
     `amount requested: ${ticket.amount_requested}`,
   ].join("\n");
-  let text: string;
-  try {
-    text = (await generator(prompt, null, SYSTEM_PROMPT)).text;
-  } catch (e: any) {
-    t("decide", { prompt }, null, `generator error: ${e.message}`);
-    return { outcome: "error" };
+  let text = "";
+  let decision: ReturnType<typeof parseDecision> = deps.cached ?? null;
+  if (!decision) {
+    try {
+      text = (await generator(prompt, null, SYSTEM_PROMPT)).text;
+    } catch (e: any) {
+      t("decide", { prompt }, null, `generator error: ${e.message}`);
+      return { outcome: "error" };
+    }
+    decision = parseDecision(text);
   }
-  const decision = parseDecision(text);
-  t("decide", { prompt }, decision ?? { raw: text.slice(0, 500) }, decision?.reason ?? "could not parse model output");
+  t("decide", { prompt, cached: !!deps.cached }, decision ?? { raw: text.slice(0, 500) }, decision?.reason ?? "could not parse model output");
   if (!decision) return { outcome: "error" };
   if (decision.decision !== "refund") return { outcome: "declined" };
 

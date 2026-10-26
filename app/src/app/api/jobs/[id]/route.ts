@@ -10,6 +10,6 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const job = getJob((await params).id);
   if (!job) return NextResponse.json({ error: "no such job" }, { status: 404 });
   const timeline = job.kind === "request" && job.run && job.entity ? liveTimeline(job.run, job.entity) : undefined;
-  const progress = job.kind === "compare" && job.status === "running" ? compareProgress(job.startedAt) : undefined;
+  const progress = job.kind === "compare" && job.status === "running" ? compareProgress(job.log, job.args.mode === "live") : undefined;
   return NextResponse.json({ job, timeline, progress });
 }

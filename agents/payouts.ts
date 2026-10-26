@@ -52,7 +52,7 @@ export async function runPayoutBatch(batchId: string, payouts: ScheduledPayout[]
       await world.ingest.transition(id, "REJECTED", actor, { provenance, evidence: check.evidence, reason: check.reason });
     } else {
       await world.ingest.transition(id, "ESCALATED", actor, { provenance, evidence: check.evidence, reason: check.reason });
-      await escalate(id, { world, trace, ticketMessage: holdMessage(p), useModel: deps.modelSummaries });
+      await escalate(id, { world, trace, ticketMessage: holdMessage(p), useModel: deps.modelSummaries, deferModel: deps.deferSummaries });
     }
   }
 
@@ -71,13 +71,14 @@ export async function runPayoutBatch(batchId: string, payouts: ScheduledPayout[]
       });
     }
     for (const r of uncertain) {
+      deps.onVerify?.(r.entityId);
       const v = await verifyAfterUncertainCall(r.entityId, r.callStartedAt, r.uncertainty ?? "timeout", verifierDeps);
       const key = world.store.entity(r.entityId)!.refundKey;
       if (v.decision === "CONFIRMED") await deps.ordersDb.query("UPDATE payouts SET internal_status = 'succeeded' WHERE payout_key = $1", [key]);
       else if (v.decision === "RETRY_SAME_KEY") {
         await deps.ordersDb.query("UPDATE payouts SET internal_status = 'pending' WHERE payout_key = $1", [key]);
         retry.push(r.entityId);
-      } else await escalate(r.entityId, { world, trace, ticketMessage: holdMessage(ids.get(r.entityId)!), useModel: deps.modelSummaries });
+      } else await escalate(r.entityId, { world, trace, ticketMessage: holdMessage(ids.get(r.entityId)!), useModel: deps.modelSummaries, deferModel: deps.deferSummaries });
     }
     if (retry.length && retry.length < toSend.length) {
       trace.write({ agent: "verifier", ticket_id: batchId, action: "verifier→executor: resend_unpaid_only", input: { batch_id: batchId, resend: retry.map((id) => world.store.entity(id)!.refundKey), of: toSend.length }, reason: `${toSend.length - retry.length} already settled; re-sending only the ${retry.length} verified not paid` });

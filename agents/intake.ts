@@ -53,6 +53,27 @@ export function parseDecision(text: string): IntakeDecision | null {
   return null;
 }
 
+export function intakePrompt(ticket: Ticket, order: { amount: number; currency: string }): string {
+  return [
+    `Ticket ${ticket.ticket_id} for order ${ticket.order_id}.`,
+    `Order amount: ${order.amount} ${order.currency}.`,
+    `Customer message: "${ticket.message}"`,
+    `amount requested: ${ticket.amount_requested}`,
+  ].join("\n");
+}
+
+// The model's refund decision for one ticket, with no world side effects, so a comparison can
+// ask for every ticket up front (in parallel) and hand the same decisions to both agents.
+export async function decideIntake(ticket: Ticket, order: { amount: number; currency: string }, memories: unknown[] = []): Promise<{ decision: IntakeDecision | null; raw: string }> {
+  const attachments = memories.length ? [{ name: "RELEVANT MEMORIES", content: JSON.stringify(memories) }] : null;
+  try {
+    const raw = (await generator(intakePrompt(ticket, order), attachments, SYSTEM_PROMPT)).text;
+    return { decision: parseDecision(raw), raw };
+  } catch (e: any) {
+    return { decision: null, raw: `generator error: ${e.message}` };
+  }
+}
+
 export async function runIntake(ticket: Ticket, entityId: string, deps: IntakeDeps): Promise<{ outcome: IntakeOutcome; decision: IntakeDecision | null }> {
   const { world, trace } = deps;
   const actor = { agentId: AGENT, taskId: ticket.ticket_id };
@@ -64,19 +85,7 @@ export async function runIntake(ticket: Ticket, entityId: string, deps: IntakeDe
   if (!decision) {
     // Only intake lessons: processor-timing lessons belong to the Verifier and mislead the model.
     const mem = deps.memory.retrieval.retrieve({ text: ticket.message, tags: ["intake"], entities: [ticket.order_id], agentId: AGENT, strategy: "minimal", namespacePrefix: "refund-ops/intake" });
-    const prompt = [
-      `Ticket ${ticket.ticket_id} for order ${ticket.order_id}.`,
-      `Order amount: ${deps.order.amount} ${deps.order.currency}.`,
-      `Customer message: "${ticket.message}"`,
-      `amount requested: ${ticket.amount_requested}`,
-    ].join("\n");
-    const attachments = mem.memories.length ? [{ name: "RELEVANT MEMORIES", content: JSON.stringify(mem.memories.map((m) => m.content)) }] : null;
-    try {
-      raw = (await generator(prompt, attachments, SYSTEM_PROMPT)).text;
-      decision = parseDecision(raw);
-    } catch (e: any) {
-      raw = `generator error: ${e.message}`;
-    }
+    ({ decision, raw } = await decideIntake(ticket, deps.order, mem.memories.map((m) => m.content)));
   }
   trace.write({ agent: AGENT, ticket_id: ticket.ticket_id, action: "decide", input: { cached: !!deps.cached }, output: decision ?? { raw: raw.slice(0, 500) }, reason: decision?.reason ?? "no usable model decision" });
 

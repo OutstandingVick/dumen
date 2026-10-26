@@ -40,7 +40,7 @@ export default async function Escalations({ searchParams }: { searchParams: Prom
             </div>
             <p style={{ margin: "12px 0 6px" }}>{c.summary}</p>
             <p className="hint" style={{ margin: 0 }}>
-              Summary by {c.summary_source === "model" ? "NVIDIA Nemotron" : "template (model not used)"} · Why escalated: {c.reason}
+              Summary by {c.summary_source === "model" ? "NVIDIA Nemotron" : c.summary_pending ? "template · Nemotron's summary is on its way (refresh)" : "template (model not used)"} · Why escalated: {c.reason}
             </p>
             {c.last_evidence && (
               <details>

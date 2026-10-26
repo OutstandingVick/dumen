@@ -193,6 +193,7 @@ export interface Escalation {
   reason: string;
   summary: string;
   summary_source: "model" | "template";
+  summary_pending?: boolean;
   created_at: string;
   decision?: { verdict: "approve" | "reject"; reason: string; at: string; outcome?: string };
 }
@@ -364,21 +365,31 @@ export function liveTimeline(runId: string, entityId: string): TimelineItem[] {
 }
 
 // Where a running comparison is: the newest run folder created since the job started.
-export function compareProgress(startedAt: string): { agent: Agent; tickets: number; ticketsTotal: number; payoutsPhase: boolean; step: string | null } | null {
-  if (!existsSync(LOGS)) return null;
-  const since = startedAt.replace(/[:.]/g, "-");
-  const dir = readdirSync(LOGS).filter((d) => RUN_RE.test(d) && d >= since).sort().at(-1);
-  if (!dir) return null;
-  const trace = readJsonl<TraceLine>(join(LOGS, dir, "trace.jsonl"));
-  const tickets = new Set(trace.filter((t) => /^T-/.test(t.ticket_id)).map((t) => t.ticket_id)).size;
-  const last = trace.at(-1);
-  return {
-    agent: dir.match(RUN_RE)![2] as Agent,
-    tickets,
-    ticketsTotal: 22,
-    payoutsPhase: trace.some((t) => /batch/.test(t.action) || /^PO-/.test(t.ticket_id)),
-    step: last ? `${last.agent} · ${last.action} · ${last.ticket_id}` : null,
-  };
+// Where a comparison is, from the "@@PROGRESS {...}" lines scripts/compare.ts prints:
+// e.g. "Nemotron decided 22/22 · Dumen paying 9/32 · verifying T-014".
+export function compareProgress(log: string, live: boolean): { text: string; pct: number } | null {
+  let decide: { done: number; total: number } | null = null;
+  let pay: { agent: string; done: number; total: number; verifying?: string } | null = null;
+  for (const line of log.split("\n")) {
+    if (!line.startsWith("@@PROGRESS ")) continue;
+    try {
+      const p = JSON.parse(line.slice(11));
+      if (p.phase === "deciding") decide = p;
+      else if (p.phase === "paying") pay = p;
+    } catch {
+      // a line cut mid-write; the next poll has it whole
+    }
+  }
+  if (!decide && !pay) return null;
+  const parts: string[] = [];
+  if (decide) parts.push(`Nemotron ${decide.done < decide.total ? "deciding" : "decided"} ${decide.done}/${decide.total}`);
+  if (pay) parts.push(`${pay.agent === "dumen" ? "Dumen" : "baseline"} paying ${pay.done}/${pay.total}`);
+  if (pay?.verifying) parts.push(`verifying ${pay.verifying}`);
+  // Live: deciding 0–20%, baseline 20–50%, Dumen 50–100%. Cached: baseline 0–45%, Dumen 45–100%.
+  const [d, b] = live ? [20, 50] : [0, 45];
+  const frac = (x: { done: number; total: number } | null) => (x && x.total ? x.done / x.total : 0);
+  const pct = !pay ? d * frac(decide) : pay.agent === "dumen" ? b + (100 - b) * frac(pay) : d + (b - d) * frac(pay);
+  return { text: parts.join(" · "), pct: Math.min(99, Math.round(pct)) };
 }
 
 export function timelineOf(run: Run, key: string): TimelineItem[] {
